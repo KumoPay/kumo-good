@@ -1,0 +1,35 @@
+{
+  "name": "kumo-good",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Offline-first, voice-driven G$ (GoodDollar) wallet on Celo — GoodBuilders hackathon entry.",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9.15.9"
+  },
+  "scripts": {
+    "mobile:start": "pnpm --filter mobile start",
+    "mobile:android": "pnpm --filter mobile android",
+    "web:dev": "pnpm --filter web dev",
+    "relayer:dev": "pnpm --filter relayer dev",
+    "relayer:validate": "pnpm --filter relayer validate",
+    "fork": "pnpm --filter devnet fork",
+    "verify:fork": "pnpm --filter devnet verify",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "format": "prettier --write \"{apps,packages,services}/**/src/**/*.{ts,tsx}\""
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "prettier": "^3.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.9"
+  },
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

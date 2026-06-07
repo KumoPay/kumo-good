@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: radial-gradient(120% 80% at 50% -10%, #16202e 0%, #0b0e14 55%) fixed;
+  color: theme("colors.text");
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* App is a phone-sized column centered on larger screens. */
+.app-shell {
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl2 px-5 py-3.5 font-semibold transition active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100;
+  }
+  .btn-primary {
+    @apply btn bg-gold text-ink shadow-glow hover:bg-gold-deep;
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-surface-2 text-text hover:border-gold/40;
+  }
+  .card {
+    @apply rounded-xl2 border border-line bg-surface p-5 shadow-card;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3 py-1 text-xs font-medium;
+  }
+  .label {
+    @apply text-xs font-medium uppercase tracking-wide text-muted;
+  }
+  .field {
+    @apply w-full rounded-xl2 border border-line bg-surface-2 px-4 py-3.5 text-text placeholder:text-muted/70 outline-none focus:border-gold/50;
+  }
+}

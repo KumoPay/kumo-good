@@ -1,0 +1,21 @@
+{
+  "name": "devnet",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Local Celo-mainnet fork + funding so the full G$ flow runs for free.",
+  "scripts": {
+    "fork": "hardhat node --port 8545",
+    "verify": "tsx scripts/verify-fork.ts",
+    "seed": "tsx scripts/seed-demo.ts"
+  },
+  "dependencies": {
+    "@kumo-good/shared": "workspace:*",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "hardhat": "^2.22.17",
+    "tsx": "^4.21.0"
+  }
+}

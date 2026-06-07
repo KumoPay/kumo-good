@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+.pnp.*
+
+# builds
+dist/
+build/
+.next/
+.expo/
+*.tsbuildinfo
+
+# hardhat (tools/devnet)
+artifacts/
+cache/
+.openzeppelin/
+
+# native
+android/
+ios/
+*.apk
+*.aab
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# models (large, downloaded at runtime)
+*.gguf
+*.bin
+
+# logs / os
+*.log
+.DS_Store
