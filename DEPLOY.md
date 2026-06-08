@@ -48,7 +48,7 @@ web app, and the relayer's Cloud Run URL wired into the web app's `RELAYER_URL`.
 
 ## 1. Relayer → Google Cloud Run
 
-A portable [`services/relayer/Dockerfile`](services/relayer/Dockerfile) + a
+A portable root [`Dockerfile`](Dockerfile) + a
 [`cloudbuild.yaml`](services/relayer/cloudbuild.yaml) are included. The build context is the
 **repo root** so the pnpm workspace (`packages/shared`) is visible.
 
@@ -65,7 +65,7 @@ printf '0xYOUR_RELAYER_PRIVATE_KEY' | gcloud secrets create relayer-pk --data-fi
 
 ### Build + deploy
 ```bash
-# build the image (uses services/relayer/Dockerfile, context = repo root) → Artifact Registry
+# build the image (uses the root Dockerfile, context = repo root) → Artifact Registry
 gcloud builds submit --config services/relayer/cloudbuild.yaml .
 
 # deploy: ONE instance (lock-safe), scales to zero (free), public so the web app can call it
@@ -106,7 +106,7 @@ Re-run the two `gcloud builds submit` + `gcloud run deploy` commands. Cloud Run 
 revision with zero downtime.
 
 > Console alternative: Cloud Run → **Create Service → Deploy from repository**, connect
-> `KumoPay/kumo-good`, set **Dockerfile path = `services/relayer/Dockerfile`**, region
+> `KumoPay/kumo-good`, set **Dockerfile path = `Dockerfile`** (repo root), region
 > `us-central1`, **Max instances = 1**, allow unauthenticated, and add the same env vars/secret.
 
 ---

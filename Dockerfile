@@ -1,12 +1,12 @@
-# kumo-good relayer — portable container for Railway / Render / Fly.
+# kumo-good relayer — portable container for Cloud Run / Railway / Render / Fly.
 #
-# IMPORTANT: build from the REPOSITORY ROOT so the pnpm workspace (packages/shared)
-# is in the build context:
+# This Dockerfile lives at the REPO ROOT on purpose: the relayer is a pnpm
+# workspace package that depends on packages/shared, so the build context MUST be
+# the repo root. Keeping the Dockerfile at the root means Cloud Run's "deploy from
+# repository" (and any plain `docker build .`) use the correct context with no
+# extra configuration.
 #
-#   docker build -f services/relayer/Dockerfile -t kumo-relayer .
-#
-# On Railway/Render/Fly: set the Dockerfile path to services/relayer/Dockerfile
-# and the build context / root directory to the repo root (the default).
+#   docker build -t kumo-relayer .            # from the repo root
 #
 # The relayer runs TypeScript directly via tsx — @kumo-good/shared is consumed as
 # source (main: ./src/index.ts), so there is no compile step.

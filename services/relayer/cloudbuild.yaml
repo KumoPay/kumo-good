@@ -1,5 +1,5 @@
-# Cloud Build: build the relayer image from services/relayer/Dockerfile with the
-# build context at the REPO ROOT (so the pnpm workspace / packages/shared is in
+# Cloud Build: build the relayer image from the ROOT Dockerfile with the build
+# context at the REPO ROOT (so the pnpm workspace / packages/shared is in
 # context), then push to Artifact Registry. Deploy step is done via `gcloud run
 # deploy` (see DEPLOY.md) so env vars / secrets aren't baked into the build.
 #
@@ -12,7 +12,7 @@ steps:
     args:
       - build
       - -f
-      - services/relayer/Dockerfile
+      - Dockerfile
       - -t
       - us-central1-docker.pkg.dev/$PROJECT_ID/kumo/relayer:latest
       - .
