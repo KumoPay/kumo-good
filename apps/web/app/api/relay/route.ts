@@ -6,6 +6,10 @@ const RELAYER_URL = process.env.RELAYER_URL ?? "http://127.0.0.1:8787"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// A settlement is permit + transferFrom + 2 on-chain receipt waits (+ possible
+// Cloud Run cold start). The default 10s function limit times out mid-settle and
+// the client sees a false failure; 60s comfortably covers it.
+export const maxDuration = 60
 
 export async function GET() {
   try {

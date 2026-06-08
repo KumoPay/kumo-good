@@ -2,7 +2,7 @@ import { getAddress, parseEther, type Hex } from "viem"
 import { RelayClaimSchema, type RelayClaimResult } from "@kumo-good/shared"
 import { ubiSchemeAbi } from "./abi.js"
 import { feeFields } from "./celo-gas.js"
-import type { Relayer } from "./relayer.js"
+import { effectiveFeeCurrency, type Relayer } from "./relayer.js"
 
 // Gasless UBI claim. Two strategies, tried in order:
 //   1. claimFor(user) — works on a GoodCollective UBIPool; the relayer is the
@@ -43,16 +43,17 @@ export async function settleClaim(relayer: Relayer, raw: unknown): Promise<Relay
   }
   const wallet = relayer.walletClient
   const account = relayer.account
+  const feeCur = await effectiveFeeCurrency(relayer) // native fallback if relayer holds no cUSD
 
-  // 1) claimFor (UBIPool) — relayer claims directly, gas in cUSD.
+  // 1) claimFor (UBIPool) — relayer claims directly, gas paid by the relayer.
   try {
     await publicClient.simulateContract({ address: ubi, abi: ubiSchemeAbi, functionName: "claimFor", args: [user], account })
-    const fee = await feeFields(publicClient, cfg.feeCurrency)
+    const fee = await feeFields(publicClient, feeCur)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const txHash = await wallet.writeContract({ address: ubi, abi: ubiSchemeAbi, functionName: "claimFor", args: [user], account, chain: cfg.chain, ...fee } as any)
     const rcpt = await publicClient.waitForTransactionReceipt({ hash: txHash })
     if (rcpt.status === "success") {
-      return { ok: true, mode: "claimFor", txHash, amount: entitlement.toString(), feeCurrency: cfg.feeCurrency }
+      return { ok: true, mode: "claimFor", txHash, amount: entitlement.toString(), feeCurrency: feeCur }
     }
   } catch {
     /* classic UBIScheme has no claimFor — fall through to gas-grant */
@@ -62,12 +63,12 @@ export async function settleClaim(relayer: Relayer, raw: unknown): Promise<Relay
   try {
     const bal = await publicClient.getBalance({ address: user })
     if (bal < MIN_USER_BALANCE) {
-      const fee = await feeFields(publicClient, cfg.feeCurrency)
+      const fee = await feeFields(publicClient, feeCur)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const grantTx = await wallet.sendTransaction({ account, chain: cfg.chain, to: user, value: GAS_GRANT, ...fee } as any)
       await publicClient.waitForTransactionReceipt({ hash: grantTx })
     }
-    return { ok: true, mode: "gas-grant", selfClaim: true, amount: entitlement.toString(), feeCurrency: cfg.feeCurrency }
+    return { ok: true, mode: "gas-grant", selfClaim: true, amount: entitlement.toString(), feeCurrency: feeCur }
   } catch (e) {
     return { ok: false, error: shortErr(e) }
   }

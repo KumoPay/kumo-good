@@ -27,6 +27,38 @@ export type Relayer = {
   address?: Hex
   dryRun: boolean
   config: RelayerConfig
+  /** Memoized effective fee currency (see effectiveFeeCurrency). */
+  feeResolved?: { value: Hex | undefined }
+}
+
+/**
+ * The gas fee currency to actually use: the configured one — unless the relayer
+ * holds ZERO of it, in which case fall back to native CELO. This stops a
+ * misconfigured FEE_CURRENCY (e.g. cUSD on a relayer funded only with CELO) from
+ * silently making every settlement revert. Memoized on the relayer instance.
+ */
+export async function effectiveFeeCurrency(relayer: Relayer): Promise<Hex | undefined> {
+  if (relayer.feeResolved) return relayer.feeResolved.value
+  const configured = relayer.config.feeCurrency
+  let value = configured
+  if (configured && relayer.address) {
+    try {
+      const bal = (await relayer.publicClient.readContract({
+        address: configured,
+        abi: erc2612Abi,
+        functionName: "balanceOf",
+        args: [relayer.address],
+      })) as bigint
+      if (bal === 0n) {
+        console.warn(`[relayer] feeCurrency ${configured} balance is 0 — paying gas in native CELO instead`)
+        value = undefined
+      }
+    } catch {
+      /* balance read failed — keep the configured currency */
+    }
+  }
+  relayer.feeResolved = { value }
+  return value
 }
 
 /** Build a relayer from config. With no RELAYER_PK it runs in dry-run mode (simulate only). */
@@ -128,7 +160,8 @@ export async function settlePermitTransfer(relayer: Relayer, raw: unknown): Prom
     const wallet = relayer.walletClient
     const account = relayer.account
     try {
-      const fee = await feeFields(publicClient, cfg.feeCurrency)
+      const feeCur = await effectiveFeeCurrency(relayer)
+      const fee = await feeFields(publicClient, feeCur)
       if (needPermit) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const permitHash = await wallet.writeContract({
@@ -147,7 +180,7 @@ export async function settlePermitTransfer(relayer: Relayer, raw: unknown): Prom
       } as any)
       const rcpt2 = await publicClient.waitForTransactionReceipt({ hash: txHash })
       if (rcpt2.status !== "success") return { ok: false, error: `transferFrom tx reverted (${txHash})` }
-      return { ok: true, txHash, feeCurrency: cfg.feeCurrency, gasUsed: rcpt2.gasUsed.toString() }
+      return { ok: true, txHash, feeCurrency: feeCur, gasUsed: rcpt2.gasUsed.toString() }
     } catch (e) {
       return { ok: false, error: shortErr(e) }
     }
@@ -248,7 +281,8 @@ export async function settleSplitTransfer(relayer: Relayer, raw: unknown): Promi
     const account = relayer.account
     let permitTxHash: Hex | undefined
     try {
-      const fee = await feeFields(publicClient, cfg.feeCurrency)
+      const feeCur = await effectiveFeeCurrency(relayer)
+      const fee = await feeFields(publicClient, feeCur)
       if (needPermit) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         permitTxHash = (await wallet.writeContract({
@@ -298,7 +332,7 @@ export async function settleSplitTransfer(relayer: Relayer, raw: unknown): Promi
         ...(allOk ? {} : { partial: anyOk }),
         ...(permitTxHash ? { permitTxHash } : {}),
         legs: results,
-        feeCurrency: cfg.feeCurrency,
+        feeCurrency: feeCur,
         gasUsed: gasUsed.toString(),
       }
     } catch (e) {

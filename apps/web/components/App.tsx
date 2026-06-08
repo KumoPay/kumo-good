@@ -13,7 +13,7 @@ import {
   splitEvenly,
   toBaseUnits,
 } from "@kumo-good/shared"
-import { getAccount, getAddress, createWallet, clearWallet, loadKey, importWallet } from "@/lib/wallet"
+import { getAccount, getAddress, createWallet, clearWallet, importWallet, isLocked, unlock, revealKey } from "@/lib/wallet"
 import { getBalance, getIdentity, getUbiEntitlement, getCurrentDay, claimUbi, type IdentityStatus } from "@/lib/gd"
 import { fetchRelayerInfo, getCachedRelayer, buildSignedPayment, buildSignedSplit, buildClaimEntry, settle, settleSplit, settleClaim, type RelayerInfo } from "@/lib/relay"
 import { readQueue, addToQueue, updateEntry, removeEntry, pending } from "@/lib/queue"
@@ -101,6 +101,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("home")
   const [toast, setToast] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [locked, setLocked] = useState(false) // passkey wallet exists but not unlocked this session
 
   // pay-flow draft + multi-action plan
   const [intent, setIntent] = useState<PaymentIntent | null>(null)
@@ -208,6 +209,7 @@ export default function App() {
   useEffect(() => {
     const addr = getAddress()
     setAddress(addr)
+    setLocked(isLocked())
     setQueue(readQueue())
     setRelayer(getCachedRelayer())
     setStreak(getStreak())
@@ -254,13 +256,39 @@ export default function App() {
   }, [online, address, flush, refreshChain])
 
   // --- actions ---------------------------------------------------------------
-  const onCreateWallet = () => {
-    createWallet()
-    const addr = getAddress()
-    setAddress(addr)
-    if (addr && navigator.onLine) {
-      fetchRelayerInfo().then(setRelayer)
-      refreshChain(addr)
+  const onCreateWallet = async () => {
+    setBusy(true)
+    try {
+      const { address: addr, secured } = await createWallet()
+      setAddress(addr)
+      setLocked(false)
+      flash(secured ? "Wallet created — secured with Face ID 🔒" : "Wallet created on this device")
+      if (addr && navigator.onLine) {
+        fetchRelayerInfo().then(setRelayer)
+        refreshChain(addr)
+      }
+    } catch (e) {
+      flash((e as Error).message || "Couldn't create the wallet")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // unlock a passkey wallet with Face ID / fingerprint
+  const onUnlock = async () => {
+    setBusy(true)
+    try {
+      const addr = await unlock()
+      setAddress(addr)
+      setLocked(false)
+      if (navigator.onLine) {
+        fetchRelayerInfo().then(setRelayer)
+        refreshChain(addr)
+      }
+    } catch (e) {
+      flash((e as Error).message || "Unlock failed — try again")
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -413,7 +441,8 @@ export default function App() {
   }
 
   if (!ready) return <main className="app-shell items-center justify-center" />
-  if (!address) return <Onboarding onCreate={onCreateWallet} />
+  if (locked) return <UnlockScreen onUnlock={onUnlock} onReset={() => { clearWallet(); setAddress(null); setLocked(false) }} busy={busy} />
+  if (!address) return <Onboarding onCreate={onCreateWallet} busy={busy} />
 
   const isTab = screen === "home" || screen === "activity" || screen === "identity" || screen === "wallet"
   const flowTitle: Partial<Record<Screen, string>> = {
@@ -491,12 +520,14 @@ export default function App() {
             onReset={() => {
               clearWallet()
               setAddress(null)
+              setLocked(false)
             }}
             onImport={(pk) => {
               try {
                 importWallet(pk)
                 const a = getAddress()
                 setAddress(a)
+                setLocked(false)
                 if (a) refreshChain(a)
               } catch (e) {
                 flash((e as Error).message)
@@ -534,11 +565,11 @@ function backFrom(
 }
 
 // ---------------------------------------------------------------------------
-function Onboarding({ onCreate }: { onCreate: () => void }) {
+function Onboarding({ onCreate, busy }: { onCreate: () => void; busy: boolean }) {
   const rows = [
-    { icon: <Mic size={20} />, t: "Say it", s: "Voice or text — “send 5 to Maria”." },
-    { icon: <Lock size={20} />, t: "Sign offline", s: "Your key never leaves this browser." },
-    { icon: <Wifi size={20} />, t: "Settles itself", s: "Gas paid in cUSD by a relayer." },
+    { icon: <Face size={20} />, t: "Secured by you", s: "Unlocked with Face ID / fingerprint." },
+    { icon: <Lock size={20} />, t: "Sign offline", s: "Your key never leaves this device." },
+    { icon: <Wifi size={20} />, t: "Settles itself", s: "Gas paid by a relayer." },
   ]
   return (
     <main className="app-shell">
@@ -563,13 +594,36 @@ function Onboarding({ onCreate }: { onCreate: () => void }) {
           </div>
         </div>
         <div className="space-y-3 pt-7">
-          <PillButton size="block" onClick={onCreate} iconRight={<Arrow size={18} />}>
-            Create my wallet
+          <PillButton size="block" disabled={busy} onClick={onCreate} icon={<Face size={18} />} iconRight={busy ? undefined : <Arrow size={18} />}>
+            {busy ? "Creating…" : "Create my wallet"}
           </PillButton>
-          <button onClick={onCreate} className="press w-full py-1.5 text-center font-display text-[14.5px] font-bold text-violet2-deep">
-            Import an existing key
+          <p className="px-4 text-center text-[12px] leading-relaxed text-muted">
+            A non-custodial wallet is generated on this device and secured with your passkey (Face ID / fingerprint) where supported. You can import an existing key later in Wallet.
+          </p>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+// Passkey wallet exists but isn't unlocked this session → Face ID to unlock.
+function UnlockScreen({ onUnlock, onReset, busy }: { onUnlock: () => void; onReset: () => void; busy: boolean }) {
+  return (
+    <main className="app-shell">
+      <div
+        className="animate-float-up flex min-h-full flex-col items-center justify-center px-6 pb-8 pt-12 text-center"
+        style={{ background: "linear-gradient(180deg,#ffffff 0%,#f5f3ff 60%,#ede9fe 100%)" }}
+      >
+        <KumoMascot state="sleeping" width={170} parens />
+        <h1 className="mt-6 font-display text-[28px] font-black tracking-[-0.02em] text-ink">Welcome back</h1>
+        <p className="mt-2 max-w-[260px] text-[15px] font-semibold text-slate2">Unlock your wallet with Face ID or your fingerprint.</p>
+        <div className="mt-8 w-full space-y-3">
+          <PillButton size="block" variant="violet" disabled={busy} onClick={onUnlock} icon={<Lock size={18} />}>
+            {busy ? "Unlocking…" : "Unlock"}
+          </PillButton>
+          <button onClick={onReset} className="press w-full py-1.5 text-center font-display text-[13px] font-bold text-muted">
+            Reset wallet
           </button>
-          <p className="px-4 text-center text-[12px] leading-relaxed text-muted">A non-custodial wallet is generated in this browser. Only you hold the key.</p>
         </div>
       </div>
     </main>
@@ -1567,10 +1621,17 @@ function OfflineVoiceCard({ flash }: { flash: (m: string) => void }) {
 }
 
 function WalletScreen({ address, relayer, onReset, onImport, flash }: { address: Hex; relayer: RelayerInfo | null; onReset: () => void; onImport: (pk: string) => void; flash: (m: string) => void }) {
-  const [revealed, setRevealed] = useState(false)
+  const [pk, setPk] = useState<string | null>(null)
   const [importPk, setImportPk] = useState("")
   const [copied, setCopied] = useState(false)
-  const pk = revealed ? loadKey() : null
+  const toggleReveal = async () => {
+    if (pk) return setPk(null)
+    try {
+      setPk(await revealKey()) // prompts Face ID for a passkey-secured wallet
+    } catch (e) {
+      flash((e as Error).message || "Couldn't reveal the key")
+    }
+  }
   const copyAddr = () => {
     navigator.clipboard?.writeText(address)
     setCopied(true)
@@ -1601,9 +1662,9 @@ function WalletScreen({ address, relayer, onReset, onImport, flash }: { address:
             <Eyebrow>Private key</Eyebrow>
             <div className="mt-1 text-[13px] text-slate2">Burner wallet · back it up</div>
           </div>
-          <button onClick={() => setRevealed((v) => !v)} className="press inline-flex items-center gap-1.5 font-display text-[13px] font-bold text-violet2-deep">
-            {revealed ? <Lock size={15} /> : <Eye size={15} />}
-            {revealed ? "Hide" : "Reveal"}
+          <button onClick={toggleReveal} className="press inline-flex items-center gap-1.5 font-display text-[13px] font-bold text-violet2-deep">
+            {pk ? <Lock size={15} /> : <Eye size={15} />}
+            {pk ? "Hide" : "Reveal"}
           </button>
         </div>
         {pk ? (
