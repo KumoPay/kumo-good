@@ -129,6 +129,29 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  // After returning from GoodDollar face verification, whitelisting is written
+  // on-chain asynchronously by GoodServer — poll until it lands (~up to 60s).
+  const pollVerification = useCallback(
+    async (addr: Hex) => {
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 5000))
+        try {
+          const idn = await getIdentity(addr)
+          if (idn.isWhitelisted) {
+            setIdentity(idn)
+            refreshChain(addr)
+            flash("Verified! You can claim your UBI 🎉")
+            return
+          }
+        } catch {
+          /* keep polling */
+        }
+      }
+      flash("Verification is still processing — reopen Identity in a minute")
+    },
+    [refreshChain, flash],
+  )
+
   // settle a single queued item (used by flush, the plan runner, and single sends)
   const settleOne = useCallback(
     async (entry: QueuedItem) => {
@@ -221,9 +244,9 @@ export default function App() {
     try {
       const url = new URL(window.location.href)
       if (url.searchParams.get("verified")) {
-        if (addr) refreshChain(addr)
-        flash("Welcome back — checking your verification…")
+        flash("Welcome back — confirming your verification…")
         window.history.replaceState({}, "", url.pathname)
+        if (addr) pollVerification(addr)
       }
       const r = url.searchParams.get("r")
       if (r && r.includes("kumo-good:pay:v1:")) {
@@ -242,7 +265,7 @@ export default function App() {
     } catch {
       /* ignore malformed deep links */
     }
-  }, [refreshChain, flash])
+  }, [refreshChain, flash, pollVerification])
 
   // flush on reconnect
   const wasOnline = useRef(online)
