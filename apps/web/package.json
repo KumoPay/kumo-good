@@ -8,10 +8,14 @@
     "build": "next build",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "copy-ort": "node scripts/copy-ort-wasm.mjs",
+    "postinstall": "node scripts/copy-ort-wasm.mjs",
+    "prebuild": "node scripts/copy-ort-wasm.mjs"
   },
   "dependencies": {
     "@goodsdks/citizen-sdk": "^1.2.5",
+    "@huggingface/transformers": "^4.2.0",
     "@kumo-good/shared": "workspace:*",
     "next": "^15.1.0",
     "qrcode": "^1.5.4",

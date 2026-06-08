@@ -17,14 +17,73 @@ import { getAccount, getAddress, createWallet, clearWallet, loadKey, importWalle
 import { getBalance, getIdentity, getUbiEntitlement, getCurrentDay, claimUbi, type IdentityStatus } from "@/lib/gd"
 import { fetchRelayerInfo, getCachedRelayer, buildSignedPayment, buildSignedSplit, buildClaimEntry, settle, settleSplit, settleClaim, type RelayerInfo } from "@/lib/relay"
 import { readQueue, addToQueue, updateEntry, removeEntry, pending } from "@/lib/queue"
+import { getPortfolio, type TokenBalance } from "@/lib/tokens"
 import { parsePlan, startVoice, voiceSupported, type Action, type VoiceHandle } from "@/lib/parse"
 import { startFaceVerification } from "@/lib/identity"
 import { toQrDataUrl, startScan, barcodeScanSupported, type ScanHandle } from "@/lib/qr"
 import { getStreak, recordClaim, type Streak } from "@/lib/streak"
 import { useOnline } from "@/lib/useOnline"
-import { fmtG, shortAddr, txLink, relTime, isAddress } from "@/lib/format"
+import {
+  isVoiceEnabled,
+  setVoiceEnabled,
+  isVoiceDownloaded,
+  downloadVoiceModel,
+  transcribe,
+  voiceModelSupported,
+  VOICE_MODEL_LABEL,
+  VOICE_MODEL_SIZE_LABEL,
+  type VoiceProgress,
+} from "@/lib/whisper"
+import { startRecording, micSupported, type RecordHandle } from "@/lib/record"
+import { fmtG, fmtToken, shortAddr, txLink, relTime, isAddress } from "@/lib/format"
 import { IS_MAINNET, G_TOKEN_ADDR, CHAIN_ID } from "@/lib/config"
-import { Mic, Send, Check, Clock, Wifi, WifiOff, Shield, Gift, Wallet, Home, Arrow, Copy, Camera, QrCode, Flame } from "@/components/Icons"
+import {
+  KumoMascot,
+  KumoMark,
+  CloudMark,
+  PillButton,
+  Eyebrow,
+  Chip,
+  Card,
+  KvRow,
+  StatusPill,
+  OnlineChip,
+  GAmount,
+  Field,
+  type ItemStatus,
+} from "@/components/Kumo"
+import {
+  Mic,
+  Check,
+  Clock,
+  Wifi,
+  WifiOff,
+  Shield,
+  Coin,
+  Wallet,
+  Home,
+  Activity as ActivityIcon,
+  Identity as IdentityIcon,
+  Arrow,
+  ArrowUp,
+  ArrowDown,
+  Copy,
+  Camera,
+  QrCode,
+  Flame,
+  Scan,
+  Split,
+  List,
+  Bolt,
+  Link as LinkIcon,
+  Globe,
+  Face,
+  CheckCircle,
+  Eye,
+  Lock,
+  Download,
+  Trash,
+} from "@/components/Icons"
 
 type Screen = "home" | "pay" | "sign" | "settled" | "activity" | "identity" | "wallet" | "scan" | "request" | "plan" | "split"
 
@@ -33,6 +92,7 @@ export default function App() {
   const [ready, setReady] = useState(false)
   const [address, setAddress] = useState<Hex | null>(null)
   const [balance, setBalance] = useState<bigint | null>(null)
+  const [portfolio, setPortfolio] = useState<TokenBalance[]>([])
   const [identity, setIdentity] = useState<IdentityStatus | null>(null)
   const [ubi, setUbi] = useState<bigint | null>(null)
   const [relayer, setRelayer] = useState<RelayerInfo | null>(null)
@@ -55,10 +115,11 @@ export default function App() {
   }, [])
 
   const refreshChain = useCallback(async (addr: Hex) => {
-    const [bal, idn, ent] = await Promise.allSettled([getBalance(addr), getIdentity(addr), getUbiEntitlement(addr)])
+    const [bal, idn, ent, port] = await Promise.allSettled([getBalance(addr), getIdentity(addr), getUbiEntitlement(addr), getPortfolio(addr)])
     if (bal.status === "fulfilled") setBalance(bal.value)
     if (idn.status === "fulfilled") setIdentity(idn.value)
     if (ent.status === "fulfilled") setUbi(ent.value)
+    if (port.status === "fulfilled") setPortfolio(port.value) // keep last-known on RPC failure
   }, [])
 
   const afterClaim = useCallback(() => {
@@ -247,7 +308,8 @@ export default function App() {
           flash(done?.failureReason ?? "Settle failed")
         }
       } else {
-        setScreen("activity")
+        setSettledEntry(readQueue().find((e) => e.id === entry.id) ?? entry)
+        setScreen("settled")
         flash("Signed offline — settles when you reconnect")
       }
     } catch (e) {
@@ -353,176 +415,551 @@ export default function App() {
   if (!ready) return <main className="app-shell items-center justify-center" />
   if (!address) return <Onboarding onCreate={onCreateWallet} />
 
+  const isTab = screen === "home" || screen === "activity" || screen === "identity" || screen === "wallet"
+  const flowTitle: Partial<Record<Screen, string>> = {
+    pay: "Pay",
+    scan: "Scan to pay",
+    request: "Request money",
+    sign: "Confirm",
+    split: "Split",
+    plan: "Plan",
+  }
+
   return (
     <main className="app-shell relative">
-      <TopBar online={online} relayer={relayer} streak={streak} />
-      <div className="flex-1 overflow-y-auto px-4 pb-28 pt-2">
+      {isTab ? (
+        <TopBar online={online} relayer={relayer} streak={streak} onToggle={undefined} />
+      ) : screen !== "settled" ? (
+        <FlowHeader title={flowTitle[screen] ?? ""} onBack={() => backFrom(screen, setScreen, setPlan, setSplitDraft)} right={<OnlineChip online={online} asButton={false} />} />
+      ) : null}
+
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-28 pt-2">
         {screen === "home" && (
           <HomeScreen
-            balance={balance} identity={identity} ubi={ubi} queue={queue} online={online} streak={streak} busy={busy}
-            onPay={() => { setIntent(null); setRecipientInput(""); setScreen("pay") }}
+            balance={balance}
+            portfolio={portfolio}
+            identity={identity}
+            ubi={ubi}
+            queue={queue}
+            online={online}
+            streak={streak}
+            busy={busy}
+            onPay={() => {
+              setIntent(null)
+              setRecipientInput("")
+              setScreen("pay")
+            }}
             onClaim={onClaim}
             onRequest={() => setScreen("request")}
             onActivity={() => setScreen("activity")}
           />
         )}
-        {screen === "pay" && (
-          <PayScreen onSubmit={submitText} onBack={() => setScreen("home")} onScan={() => setScreen("scan")} flash={flash} selfAddr={address} />
-        )}
+        {screen === "pay" && <PayScreen onSubmit={submitText} onScan={() => setScreen("scan")} flash={flash} selfAddr={address} />}
         {screen === "scan" && (
-          <ScanScreen onClose={() => setScreen("pay")} flash={flash} onResult={(text) => {
-            try {
-              const req = parsePaymentRequest(text)
-              setRecipientInput(req.to)
-              if (req.amount) { setIntent({ recipient: req.label ?? req.to, amount: req.amount, ...(req.memo ? { memo: req.memo } : {}) }); setScreen("sign") }
-              else { flash(`Enter an amount to pay ${req.label ?? shortAddr(req.to)}`); setScreen("pay") }
-            } catch { flash("Not a kumo-good payment QR") }
-          }} />
+          <ScanScreen
+            flash={flash}
+            onResult={(text) => {
+              try {
+                const req = parsePaymentRequest(text)
+                setRecipientInput(req.to)
+                if (req.amount) {
+                  setIntent({ recipient: req.label ?? req.to, amount: req.amount, ...(req.memo ? { memo: req.memo } : {}) })
+                  setScreen("sign")
+                } else {
+                  flash(`Enter an amount to pay ${req.label ?? shortAddr(req.to)}`)
+                  setScreen("pay")
+                }
+              } catch {
+                flash("Not a Kumo payment QR")
+              }
+            }}
+          />
         )}
-        {screen === "request" && <RequestScreen address={address} flash={flash} onBack={() => setScreen("home")} />}
+        {screen === "request" && <RequestScreen address={address} flash={flash} />}
         {screen === "sign" && intent && (
-          <SignScreen intent={intent} recipientInput={recipientInput} setRecipientInput={setRecipientInput} online={online} busy={busy} onSign={onSign} onBack={() => setScreen("pay")} selfAddr={address} />
+          <SignScreen intent={intent} recipientInput={recipientInput} setRecipientInput={setRecipientInput} online={online} busy={busy} onSign={onSign} selfAddr={address} />
         )}
-        {screen === "plan" && plan && (
-          <PlanScreen actions={plan} online={online} busy={busy} selfAddr={address} onRun={runPlan} onBack={() => { setPlan(null); setScreen("pay") }} />
-        )}
-        {screen === "split" && splitDraft && (
-          <SplitScreen draft={splitDraft} online={online} busy={busy} selfAddr={address} onRun={runSplit} onBack={() => { setSplitDraft(null); setScreen("pay") }} />
-        )}
-        {screen === "settled" && settledEntry && <SettledScreen entry={settledEntry} onDone={() => setScreen("home")} onActivity={() => setScreen("activity")} />}
+        {screen === "plan" && plan && <PlanScreen actions={plan} online={online} busy={busy} selfAddr={address} onRun={runPlan} />}
+        {screen === "split" && splitDraft && <SplitScreen draft={splitDraft} online={online} busy={busy} selfAddr={address} onRun={runSplit} />}
+        {screen === "settled" && settledEntry && <SettledScreen entry={settledEntry} online={online} onDone={() => setScreen("home")} onActivity={() => setScreen("activity")} />}
         {screen === "activity" && <ActivityScreen queue={queue} online={online} onFlush={flush} onRemove={(id) => { removeEntry(id); setQueue(readQueue()) }} />}
         {screen === "identity" && <IdentityScreen identity={identity} ubi={ubi} address={address} streak={streak} onClaim={onClaim} busy={busy} flash={flash} />}
-        {screen === "wallet" && <WalletScreen address={address} relayer={relayer} onReset={() => { clearWallet(); setAddress(null) }} onImport={(pk) => { try { importWallet(pk); const a = getAddress(); setAddress(a); if (a) refreshChain(a) } catch (e) { flash((e as Error).message) } }} flash={flash} />}
+        {screen === "wallet" && (
+          <WalletScreen
+            address={address}
+            relayer={relayer}
+            onReset={() => {
+              clearWallet()
+              setAddress(null)
+            }}
+            onImport={(pk) => {
+              try {
+                importWallet(pk)
+                const a = getAddress()
+                setAddress(a)
+                if (a) refreshChain(a)
+              } catch (e) {
+                flash((e as Error).message)
+              }
+            }}
+            flash={flash}
+          />
+        )}
       </div>
-      {(screen === "home" || screen === "activity" || screen === "identity" || screen === "wallet") && (
-        <TabBar screen={screen} setScreen={setScreen} queueCount={pending(queue).length} />
-      )}
-      {toast && <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 mx-auto w-fit max-w-[90%] animate-fade-up rounded-full bg-surface-2 px-4 py-2.5 text-sm text-text shadow-card ring-1 ring-line">{toast}</div>}
+
+      {isTab && <TabBar screen={screen} setScreen={setScreen} queueCount={pending(queue).length} />}
+      {toast && <Toast message={toast} />}
     </main>
   )
+}
+
+// route Back from a flow screen to its parent
+function backFrom(
+  screen: Screen,
+  setScreen: (s: Screen) => void,
+  setPlan: (p: Action[] | null) => void,
+  setSplitDraft: (d: { split: SplitIntent; claimFirst: boolean } | null) => void,
+) {
+  if (screen === "scan") return setScreen("pay")
+  if (screen === "sign") return setScreen("pay")
+  if (screen === "plan") {
+    setPlan(null)
+    return setScreen("pay")
+  }
+  if (screen === "split") {
+    setSplitDraft(null)
+    return setScreen("pay")
+  }
+  setScreen("home")
 }
 
 // ---------------------------------------------------------------------------
 function Onboarding({ onCreate }: { onCreate: () => void }) {
+  const rows = [
+    { icon: <Mic size={20} />, t: "Say it", s: "Voice or text — “send 5 to Maria”." },
+    { icon: <Lock size={20} />, t: "Sign offline", s: "Your key never leaves this browser." },
+    { icon: <Wifi size={20} />, t: "Settles itself", s: "Gas paid in cUSD by a relayer." },
+  ]
   return (
-    <main className="app-shell items-center justify-center p-7 text-center">
-      <div className="animate-fade-up">
-        <div className="mx-auto mb-6 grid h-20 w-20 place-items-center rounded-3xl bg-gold text-3xl font-black text-ink shadow-glow">G$</div>
-        <h1 className="text-3xl font-extrabold tracking-tight">kumo-good</h1>
-        <p className="mx-auto mt-3 max-w-xs text-muted">Speak a G$ payment <span className="text-text">offline</span>. It settles itself when you&apos;re back online — no CELO needed.</p>
-        <div className="mx-auto mt-8 max-w-sm space-y-3 text-left">
-          <Feature icon={<Mic className="h-5 w-5" />} title="Say it" body="Voice or text → an on-device parser turns it into a payment or a UBI claim." />
-          <Feature icon={<WifiOff className="h-5 w-5" />} title="Sign offline" body="Your phone signs locally. The key never leaves the browser." />
-          <Feature icon={<Wifi className="h-5 w-5" />} title="Settles itself" body="On reconnect a relayer submits it, gas paid in cUSD." />
+    <main className="app-shell">
+      <div
+        className="animate-float-up flex min-h-full flex-col px-6 pb-8 pt-12"
+        style={{ background: "linear-gradient(180deg,#ffffff 0%,#f5f3ff 60%,#ede9fe 100%)" }}
+      >
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
+          <KumoMascot state="waving" width={188} parens coin />
+          <h1 className="mt-6 font-display text-[30px] font-black tracking-[-0.02em] text-ink">Welcome to Kumo</h1>
+          <p className="mt-2 text-[16px] font-semibold text-slate2">Pay when the signal disappears.</p>
+          <div className="mt-8 w-full space-y-2.5">
+            {rows.map((r) => (
+              <div key={r.t} className="flex items-center gap-3.5 rounded-2xl bg-white/80 px-4 py-3 text-left shadow-card backdrop-blur">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-lilac/30 text-violet2-deep">{r.icon}</span>
+                <div>
+                  <div className="font-display text-[15px] font-extrabold text-ink">{r.t}</div>
+                  <div className="text-[13px] text-slate2">{r.s}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <button className="btn-primary mt-8 w-full max-w-sm" onClick={onCreate}>Create my wallet <Arrow className="h-5 w-5" /></button>
-        <p className="mt-3 text-xs text-muted">A non-custodial burner wallet is generated in this browser.</p>
+        <div className="space-y-3 pt-7">
+          <PillButton size="block" onClick={onCreate} iconRight={<Arrow size={18} />}>
+            Create my wallet
+          </PillButton>
+          <button onClick={onCreate} className="press w-full py-1.5 text-center font-display text-[14.5px] font-bold text-violet2-deep">
+            Import an existing key
+          </button>
+          <p className="px-4 text-center text-[12px] leading-relaxed text-muted">A non-custodial wallet is generated in this browser. Only you hold the key.</p>
+        </div>
       </div>
     </main>
   )
 }
-function Feature({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+
+function TopBar({ online, relayer, streak, onToggle }: { online: boolean; relayer: RelayerInfo | null; streak: Streak; onToggle?: () => void }) {
   return (
-    <div className="card flex gap-3 py-4">
-      <div className="mt-0.5 text-gold">{icon}</div>
-      <div><div className="font-semibold">{title}</div><div className="text-sm text-muted">{body}</div></div>
+    <div className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-100 bg-white/85 px-4 backdrop-blur">
+      <div className="flex items-center gap-2">
+        <KumoMark size={32} />
+        <span className="font-display text-[16px] font-extrabold tracking-tight">Kumo</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {streak.count > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 font-display text-[12px] font-bold text-amber-700">
+            <Flame size={13} /> {streak.count}
+          </span>
+        )}
+        <OnlineChip online={online} onClick={onToggle} asButton={!!onToggle} />
+      </div>
     </div>
   )
 }
 
-function TopBar({ online, relayer, streak }: { online: boolean; relayer: RelayerInfo | null; streak: Streak }) {
+function FlowHeader({ title, onBack, right }: { title: string; onBack: () => void; right?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-4 pt-5">
-      <div className="flex items-center gap-2">
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-gold text-sm font-black text-ink">G$</div>
-        <div className="leading-tight">
-          <div className="text-sm font-bold">kumo-good</div>
-          <div className="text-[11px] text-muted">{IS_MAINNET ? "Celo" : `chain ${relayer?.chainId ?? CHAIN_ID}`}</div>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {streak.count > 0 && <span className="chip text-gold"><Flame className="h-3.5 w-3.5" /> {streak.count}</span>}
-        <span className={`chip ${online ? "text-ok" : "text-danger"}`}>{online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}{online ? "online" : "offline"}</span>
-      </div>
+    <div className="sticky top-0 z-20 flex h-14 items-center justify-between gap-2 border-b border-slate-100 bg-white/90 px-3 backdrop-blur">
+      <button onClick={onBack} aria-label="Back" className="press grid h-9 w-9 place-items-center rounded-full text-ink hover:bg-slate-100">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M15 6l-6 6 6 6" />
+        </svg>
+      </button>
+      <span className="font-display text-[16px] font-extrabold text-ink">{title}</span>
+      <div className="flex w-9 justify-end">{right}</div>
     </div>
   )
 }
 
 function HomeScreen(props: {
-  balance: bigint | null; identity: IdentityStatus | null; ubi: bigint | null; queue: QueuedItem[]; online: boolean; streak: Streak; busy: boolean
-  onPay: () => void; onClaim: () => void; onRequest: () => void; onActivity: () => void
+  balance: bigint | null
+  portfolio: TokenBalance[]
+  identity: IdentityStatus | null
+  ubi: bigint | null
+  queue: QueuedItem[]
+  online: boolean
+  streak: Streak
+  busy: boolean
+  onPay: () => void
+  onClaim: () => void
+  onRequest: () => void
+  onActivity: () => void
 }) {
-  const { balance, identity, ubi, queue, onPay, onClaim, onRequest, onActivity, busy, online } = props
+  const { balance, portfolio, identity, ubi, queue, onPay, onClaim, onRequest, onActivity, busy, online, streak } = props
   const pend = pending(queue)
-  const recent = queue.slice(0, 4)
   const canClaim = ubi != null && ubi > 0n
   return (
-    <div className="space-y-4 pt-4">
-      <div className="card animate-fade-up bg-gradient-to-b from-surface-2 to-surface">
-        <div className="label">G$ balance</div>
-        <div className="mt-1 flex items-end gap-2">
-          <span className="text-4xl font-extrabold tracking-tight">{balance == null ? "—" : fmtG(balance)}</span>
-          <span className="mb-1 font-semibold text-gold">G$</span>
-        </div>
-        <div className="mt-1 flex items-center gap-2 text-xs">
-          {identity?.isWhitelisted ? <span className="chip text-ok"><Shield className="h-3.5 w-3.5" /> verified human</span> : <span className="chip text-muted"><Shield className="h-3.5 w-3.5" /> not verified</span>}
+    <div className="animate-float-up space-y-4 pt-4">
+      {/* greeting + state-reactive mascot */}
+      <div className="flex items-center gap-3 px-1">
+        <KumoMascot state={online ? "signal" : "offline"} width={56} float={false} />
+        <div>
+          <div className="font-display text-[17px] font-extrabold leading-tight text-ink">Hi there 👋</div>
+          <div className="text-[12.5px] font-semibold" style={{ color: online ? "#16a34a" : "#7c5cff" }}>
+            {online ? "Online · everything settles itself" : "Offline · I’ll queue your payments"}
+          </div>
         </div>
       </div>
 
-      {pend.length > 0 && (
-        <button onClick={onActivity} className="card flex w-full animate-fade-up items-center justify-between text-left">
-          <div className="flex items-center gap-3"><Clock className="h-5 w-5 text-gold" /><div><div className="font-semibold">{pend.length} queued</div><div className="text-xs text-muted">{online ? "settling…" : "settles when you reconnect"}</div></div></div>
-          <Arrow className="h-5 w-5 text-muted" />
+      {/* balance card */}
+      <Card className="relative overflow-hidden !p-0">
+        <div className="absolute -right-8 -top-10 opacity-20">
+          <CloudMark size={130} color="#C7B5FF" />
+        </div>
+        <div className="relative p-5">
+          <div className="flex items-center justify-between">
+            <Eyebrow>Your balance</Eyebrow>
+            {identity?.isWhitelisted ? (
+              <Chip tone="green" icon={<CheckCircle size={14} />}>
+                Verified human
+              </Chip>
+            ) : (
+              <Chip tone="slate" icon={<Shield size={14} />}>
+                Not verified
+              </Chip>
+            )}
+          </div>
+          <div className="mt-2 flex items-end justify-between">
+            <GAmount value={balance == null ? "—" : fmtG(balance)} size="text-[42px]" />
+            {streak.count > 0 && (
+              <Chip tone="amber" icon={<Flame size={14} />}>
+                {streak.count}
+              </Chip>
+            )}
+          </div>
+          {!online && pend.length > 0 && (
+            <button onClick={onActivity} className="press mt-4 flex w-full items-center gap-2.5 rounded-xl bg-lilac/25 px-3.5 py-2.5 text-left">
+              <WifiOff size={18} className="shrink-0 text-violet2-deep" />
+              <span className="flex-1 text-[13px] font-semibold text-violet2-deep">{pend.length} queued · settles when you reconnect</span>
+              <Arrow size={16} className="shrink-0 text-violet2-deep" />
+            </button>
+          )}
+        </div>
+      </Card>
+
+      {/* primary actions */}
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={onPay} className="press flex flex-col items-start gap-6 rounded-card bg-cyan p-4 text-ink shadow-glow">
+          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/55">
+            <ArrowUp size={22} />
+          </span>
+          <span className="font-display text-[17px] font-extrabold">Pay</span>
         </button>
-      )}
-
-      <div className="grid grid-cols-2 gap-3">
-        <button className="btn-primary h-24 flex-col gap-1.5" onClick={onPay}><Send className="h-6 w-6" /> Pay</button>
-        <button className="btn-ghost h-24 flex-col gap-1.5 disabled:opacity-60" onClick={onClaim} disabled={busy || !canClaim}><Gift className="h-6 w-6 text-gold" />{canClaim ? `Claim ${fmtG(ubi!)} G$` : "UBI claimed"}</button>
+        <button
+          onClick={onClaim}
+          disabled={busy || !canClaim}
+          className="press flex flex-col items-start gap-6 rounded-card bg-gradient-to-br from-violet2 to-violet2-soft p-4 text-white shadow-violetglow disabled:opacity-60"
+        >
+          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/20">
+            <Coin size={22} />
+          </span>
+          <span className="font-display text-[17px] font-extrabold leading-tight">
+            {canClaim ? (
+              <>
+                Claim {fmtG(ubi!)} G$
+                <br />
+                <span className="text-[12px] font-bold text-white/75">Today’s UBI</span>
+              </>
+            ) : (
+              <>
+                UBI claimed
+                <br />
+                <span className="text-[12px] font-bold text-white/75">Come back tomorrow</span>
+              </>
+            )}
+          </span>
+        </button>
       </div>
-      <button className="btn-ghost w-full" onClick={onRequest}><QrCode className="h-5 w-5 text-gold" /> Request money (QR)</button>
 
+      <button
+        onClick={onRequest}
+        className="press flex w-full items-center justify-center gap-2.5 rounded-card bg-white p-4 font-display text-[15px] font-extrabold text-ink shadow-card ring-[1.5px] ring-inset ring-ink/85"
+      >
+        <QrCode size={20} /> Request money (QR)
+      </button>
+
+      {/* portfolio */}
       <div>
-        <div className="label mb-2 px-1">Recent</div>
-        {recent.length === 0 ? <div className="card text-sm text-muted">No activity yet. Tap Pay, or Claim your UBI.</div> : <div className="space-y-2">{recent.map((e) => <ActivityRow key={e.id} e={e} />)}</div>}
+        <div className="mb-2 px-1">
+          <Eyebrow>Portfolio</Eyebrow>
+        </div>
+        {portfolio.length === 0 ? (
+          <Card className="text-sm text-slate2">{online ? "Loading your tokens…" : "Reconnect to load your tokens."}</Card>
+        ) : (
+          <Card className="!p-2">
+            {portfolio.map((t, i) => (
+              <TokenRow key={t.symbol} t={t} last={i === portfolio.length - 1} />
+            ))}
+          </Card>
+        )}
       </div>
     </div>
   )
 }
 
-function PayScreen({ onSubmit, onBack, onScan, flash, selfAddr }: { onSubmit: (t: string) => void; onBack: () => void; onScan: () => void; flash: (m: string) => void; selfAddr: Hex }) {
-  const [text, setText] = useState("")
-  const [listening, setListening] = useState(false)
-  const handle = useRef<VoiceHandle | null>(null)
-  const toggleVoice = () => {
-    if (listening) { handle.current?.stop(); setListening(false); return }
-    if (!voiceSupported()) return flash("Voice isn't supported here — type instead")
-    setListening(true); setText("")
-    handle.current = startVoice({ onText: (t) => setText(t), onError: (m) => { flash(m); setListening(false) }, onEnd: () => setListening(false) })
-  }
+// reusable activity row (Home compact + Activity expanded)
+function ActivityRow({ e, last, compact, onRemove }: { e: QueuedItem; last?: boolean; compact?: boolean; onRemove?: (id: string) => void }) {
+  const now = Math.floor(Date.now() / 1000)
+  const isClaim = e.kind === "claim"
+  const incoming = isClaim // UBI claims add to your wallet
+  const label = itemLabel(e)
+  const to = e.kind === "payment" ? shortAddr(e.relay.recipient) : e.kind === "split" ? `${e.split.recipients.length} recipients` : ""
   return (
-    <div className="space-y-5 pt-4">
-      <BackHeader title="New payment" onBack={onBack} />
-      <div className="grid place-items-center py-5">
-        <button onClick={toggleVoice} className={`grid h-28 w-28 place-items-center rounded-full bg-gold text-ink shadow-glow transition ${listening ? "animate-pulse-ring" : ""}`}><Mic className="h-12 w-12" /></button>
-        <div className="mt-3 text-sm text-muted">{listening ? "Listening… e.g. “claim my UBI and send 5 to…”" : "Tap to speak, type, or scan"}</div>
+    <div className={`flex items-center gap-3 px-2.5 py-2.5 ${last ? "" : "border-b border-slate-100"}`}>
+      <span
+        className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${
+          isClaim ? "bg-emerald-100 text-emerald-600" : incoming ? "bg-lilac/35 text-violet2-deep" : "bg-cyan/30 text-ink"
+        }`}
+      >
+        {isClaim ? <Coin size={20} /> : <ArrowUp size={18} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-display text-[14.5px] font-bold text-ink">{label}</div>
+        <div className="truncate text-[12px] text-muted">
+          {to ? `${to} · ` : ""}
+          {relTime(e.createdAt)}
+        </div>
+        {!compact && e.failureReason && <div className="mt-1 truncate text-[11.5px] text-red-600">{e.failureReason}</div>}
+        {!compact && (e.kind === "payment" || e.kind === "split") && e.status === "queued" && (
+          <div className="mt-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-violet2-deep">
+            <Clock size={13} /> {expiresInLabel(e.relay.deadline, now)}
+          </div>
+        )}
       </div>
-      <textarea className="field min-h-[84px] resize-none" placeholder="e.g. send 5 to 0x… for lunch — or — claim my UBI and send 2 to mom" value={text} onChange={(e) => setText(e.target.value)} />
-      <div className="flex flex-wrap gap-2">
-        <button className="chip" onClick={() => setText(`send 5 to ${selfAddr}`)}>send 5 to me</button>
-        <button className="chip" onClick={() => setText("claim my UBI")}>claim my UBI</button>
-        <button className="chip" onClick={() => setText(`claim my UBI and send 2 to ${selfAddr}`)}>claim + send</button>
-        <button className="chip" onClick={() => setText("split 30 between Ama, Kofi and Esi")}>split 30 three ways</button>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <button className="btn-ghost" onClick={onScan}><Camera className="h-5 w-5 text-gold" /> Scan QR</button>
-        <button className="btn-primary" onClick={() => onSubmit(text)} disabled={!text.trim()}>Review <Arrow className="h-5 w-5" /></button>
+      <div className="shrink-0 text-right">
+        {compact ? (
+          <div
+            className="font-display text-[11px] font-bold"
+            style={{ color: e.status === "settled" ? "#16a34a" : e.status === "failed" || e.status === "expired" ? "#dc2626" : "#7c5cff" }}
+          >
+            {e.status}
+          </div>
+        ) : (
+          <div className="flex flex-col items-end gap-1">
+            <StatusPill status={e.status as ItemStatus} />
+            <div className="flex items-center gap-2">
+              {e.txHash && (
+                <a className="text-violet2-deep" href={txLink(e.txHash)} target="_blank" rel="noreferrer" aria-label="View on Celoscan">
+                  <Globe size={15} />
+                </a>
+              )}
+              {onRemove && (e.status === "settled" || e.status === "failed" || e.status === "expired") && (
+                <button className="text-[11px] font-semibold text-muted" onClick={() => onRemove(e.id)}>
+                  clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function ScanScreen({ onClose, onResult, flash }: { onClose: () => void; onResult: (text: string) => void; flash: (m: string) => void }) {
+// a single token holding (Home portfolio)
+function TokenRow({ t, last }: { t: TokenBalance; last?: boolean }) {
+  return (
+    <div className={`flex items-center gap-3 px-2.5 py-2.5 ${last ? "" : "border-b border-slate-100"}`}>
+      <TokenMark symbol={t.symbol} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-display text-[14.5px] font-bold text-ink">{t.name}</div>
+        <div className="text-[12px] text-muted">{t.symbol}</div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div className="font-display text-[15px] font-extrabold text-ink">{fmtToken(t.balance, t.decimals)}</div>
+        <div className="text-[11px] font-bold font-display text-muted">{t.symbol}</div>
+      </div>
+    </div>
+  )
+}
+
+function TokenMark({ symbol }: { symbol: string }) {
+  if (symbol === "G$") return <span className="grid h-10 w-10 shrink-0 place-items-center"><Coin size={36} /></span>
+  if (symbol === "CELO")
+    return (
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-amber-100">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" stroke="#0B1020" strokeWidth="2.4" />
+          <circle cx="12" cy="12" r="3.4" fill="#0B1020" />
+        </svg>
+      </span>
+    )
+  if (symbol === "cUSD")
+    return <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cyan/35 font-display text-[16px] font-black text-ink">$</span>
+  return <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-100 font-display font-bold text-slate2">{symbol[0]}</span>
+}
+
+type VoiceState = "idle" | "listening" | "recording" | "transcribing"
+function PayScreen({ onSubmit, onScan, flash, selfAddr }: { onSubmit: (t: string) => void; onScan: () => void; flash: (m: string) => void; selfAddr: Hex }) {
+  const [text, setText] = useState("")
+  const [vstate, setVstate] = useState<VoiceState>("idle")
+  const [offlineVoice, setOfflineVoice] = useState(false) // on-device Whisper enabled + downloaded
+  const speech = useRef<VoiceHandle | null>(null)
+  const recorder = useRef<RecordHandle | null>(null)
+
+  useEffect(() => {
+    setOfflineVoice(isVoiceEnabled() && isVoiceDownloaded() && micSupported())
+    return () => {
+      speech.current?.stop()
+      recorder.current?.cancel()
+    }
+  }, [])
+
+  const toggleVoice = async () => {
+    // On-device Whisper path: record → transcribe.
+    if (vstate === "recording") {
+      const r = recorder.current
+      recorder.current = null
+      if (!r) return setVstate("idle")
+      setVstate("transcribing")
+      try {
+        const audio = await r.stop()
+        if (audio.length < 1600) {
+          flash("Didn't catch that — try again")
+        } else {
+          setText(await transcribe(audio))
+        }
+      } catch (e) {
+        flash((e as Error).message)
+      } finally {
+        setVstate("idle")
+      }
+      return
+    }
+    if (vstate === "transcribing") return // working — ignore taps
+    if (vstate === "listening") {
+      speech.current?.stop()
+      setVstate("idle")
+      return
+    }
+    // Start. Prefer on-device Whisper (true offline); else Web Speech (needs network).
+    if (isVoiceEnabled() && isVoiceDownloaded() && micSupported()) {
+      try {
+        setText("")
+        recorder.current = await startRecording()
+        setVstate("recording")
+      } catch {
+        flash("Microphone permission is needed for voice")
+        setVstate("idle")
+      }
+      return
+    }
+    if (!voiceSupported()) return flash("Turn on offline voice in Wallet, or just type your command")
+    setVstate("listening")
+    setText("")
+    speech.current = startVoice({
+      onText: (t) => setText(t),
+      onError: (m) => { flash(m); setVstate("idle") },
+      onEnd: () => setVstate((s) => (s === "listening" ? "idle" : s)),
+    })
+  }
+
+  const micActive = vstate === "recording" || vstate === "listening"
+  const micLabel =
+    vstate === "recording" ? "Recording… tap to stop" : vstate === "transcribing" ? "Transcribing…" : vstate === "listening" ? "Listening…" : "Tap to speak"
+
+  const chips = [
+    { label: "send 5 to me", fill: `send 5 to ${selfAddr}` },
+    { label: "claim my UBI", fill: "claim my UBI" },
+    { label: "claim + send", fill: `claim my UBI and send 2 to ${selfAddr}` },
+    { label: "split 30 three ways", fill: "split 30 between Ama, Kofi and Esi" },
+  ]
+  return (
+    <div className="animate-float-up flex min-h-full flex-col pt-2">
+      <div className="text-center">
+        <Eyebrow className="justify-center">Pay or claim</Eyebrow>
+        <h2 className="mt-1 font-display text-[22px] font-black text-ink">Say what you want to do</h2>
+      </div>
+
+      {/* mic */}
+      <div className="my-7 grid place-items-center">
+        <div className="relative grid h-[132px] w-[132px] place-items-center">
+          {micActive && (
+            <>
+              <span className="absolute inset-0 rounded-full bg-lilac/40 animate-halo" />
+              <span className="absolute inset-0 rounded-full bg-lilac/30 animate-halo" style={{ animationDelay: "0.5s" }} />
+            </>
+          )}
+          <button
+            onClick={toggleVoice}
+            disabled={vstate === "transcribing"}
+            aria-label={micActive ? "Stop" : "Start voice input"}
+            className={`press relative grid h-[104px] w-[104px] place-items-center rounded-full text-white shadow-violetglow disabled:opacity-70 ${micActive ? "bg-violet2-deep" : "bg-violet2"}`}
+          >
+            <Mic size={40} />
+          </button>
+        </div>
+        <p className="mt-3 h-5 font-display text-[13px] font-bold" style={{ color: micActive || vstate === "transcribing" ? "#6d28d9" : "#94a3b8" }}>
+          {micLabel}
+        </p>
+        <p className="mt-0.5 text-[11px] font-semibold text-muted">{offlineVoice ? "On-device · works offline" : "Voice uses the network · enable offline voice in Wallet"}</p>
+      </div>
+
+      <Field textarea rows={3} value={text} onChange={setText} placeholder="send 5 to 0x… for lunch — or — claim my UBI and send 2 to mom" />
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {chips.map((c) => (
+          <button
+            key={c.label}
+            onClick={() => setText(c.fill)}
+            className="press rounded-full bg-cyan/30 px-3 py-1.5 font-display text-[12.5px] font-bold text-ink hover:bg-cyan/45"
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-auto grid grid-cols-[auto_1fr] gap-3 pt-7">
+        <PillButton variant="secondary" size="lg" onClick={onScan} icon={<Scan size={18} />}>
+          Scan QR
+        </PillButton>
+        <PillButton size="lg" disabled={!text.trim()} onClick={() => onSubmit(text)} iconRight={<Arrow size={18} />}>
+          Review
+        </PillButton>
+      </div>
+    </div>
+  )
+}
+
+function ScanScreen({ onResult, flash }: { onResult: (text: string) => void; flash: (m: string) => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const scan = useRef<ScanHandle | null>(null)
   const [paste, setPaste] = useState("")
@@ -532,29 +969,53 @@ function ScanScreen({ onClose, onResult, flash }: { onClose: () => void; onResul
     if (supported && videoRef.current) {
       startScan(videoRef.current, (t) => { if (live) onResult(t) }, (e) => flash(e)).then((h) => { scan.current = h })
     }
-    return () => { live = false; scan.current?.stop() }
+    return () => {
+      live = false
+      scan.current?.stop()
+    }
   }, [supported, onResult, flash])
   return (
-    <div className="space-y-4 pt-4">
-      <BackHeader title="Scan to pay" onBack={() => { scan.current?.stop(); onClose() }} />
-      {supported ? (
-        <div className="overflow-hidden rounded-xl2 border border-line bg-black">
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <video ref={videoRef} className="aspect-square w-full object-cover" muted playsInline />
-        </div>
-      ) : (
-        <div className="card text-sm text-muted">Camera scanning isn&apos;t available in this browser. Paste the payment link below.</div>
-      )}
-      <div className="card space-y-2">
-        <div className="label">Or paste a payment link</div>
-        <input className="field text-sm" placeholder="https://…?r=kumo-good:pay:v1:…" value={paste} onChange={(e) => setPaste(e.target.value)} />
-        <button className="btn-ghost w-full" disabled={!paste.trim()} onClick={() => onResult(paste.trim())}>Use link</button>
+    <div className="animate-float-up flex min-h-full flex-col pt-2">
+      <div className="mb-5 text-center">
+        <Eyebrow className="justify-center">Scan to pay</Eyebrow>
+        <h2 className="mt-1 font-display text-[22px] font-black text-ink">Point at a payment QR</h2>
       </div>
+
+      <div className="relative mx-auto aspect-square w-full max-w-[300px] overflow-hidden rounded-3xl bg-ink" style={{ background: "radial-gradient(120% 120% at 50% 0%, #1b2336 0%, #0B1020 70%)" }}>
+        {supported ? (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video ref={videoRef} className="absolute inset-0 h-full w-full object-cover" muted playsInline />
+        ) : (
+          <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "radial-gradient(circle at 30% 30%, #7c5cff55, transparent 40%), radial-gradient(circle at 70% 70%, #7FE8FF44, transparent 45%)" }} />
+        )}
+        {/* corner brackets */}
+        {[
+          ["top-6 left-6", "border-t-4 border-l-4 rounded-tl-xl"],
+          ["top-6 right-6", "border-t-4 border-r-4 rounded-tr-xl"],
+          ["bottom-6 left-6", "border-b-4 border-l-4 rounded-bl-xl"],
+          ["bottom-6 right-6", "border-b-4 border-r-4 rounded-br-xl"],
+        ].map(([pos, b], i) => (
+          <span key={i} className={`absolute ${pos} h-12 w-12 ${b} border-cyan`} />
+        ))}
+        <span className="absolute left-8 right-8 h-0.5 bg-cyan shadow-glow animate-scanline" style={{ top: "20%" }} />
+        <div className="absolute inset-x-0 bottom-5 text-center text-[13px] font-semibold text-white/70">{supported ? "Point at a QR" : "Camera unavailable — paste a link"}</div>
+      </div>
+
+      <div className="my-5 flex items-center gap-3 text-muted">
+        <span className="flex-1 border-t border-dashed border-lilac-soft" />
+        <span className="font-display text-[12px] font-bold">or paste a link</span>
+        <span className="flex-1 border-t border-dashed border-lilac-soft" />
+      </div>
+
+      <Field value={paste} onChange={setPaste} mono placeholder="https://…?r=kumo-good:pay:v1:…" prefix={<LinkIcon size={16} />} />
+      <PillButton variant="secondary" size="block" className="mt-3" disabled={!paste.trim()} onClick={() => onResult(paste.trim())}>
+        Use link
+      </PillButton>
     </div>
   )
 }
 
-function RequestScreen({ address, flash, onBack }: { address: Hex; flash: (m: string) => void; onBack: () => void }) {
+function RequestScreen({ address, flash }: { address: Hex; flash: (m: string) => void }) {
   const [amount, setAmount] = useState("")
   const [memo, setMemo] = useState("")
   const [label, setLabel] = useState("")
@@ -564,248 +1025,683 @@ function RequestScreen({ address, flash, onBack }: { address: Hex; flash: (m: st
     const amt = Number(amount)
     if (!Number.isFinite(amt) || amt <= 0) return flash("Enter an amount")
     const uri = buildPaymentRequest({ to: address, amount: amt, ...(memo ? { memo } : {}), ...(label ? { label } : {}), token: G_TOKEN_ADDR, chainId: CHAIN_ID })
-    const url = `${window.location.origin}/?r=${encodeURIComponent(uri)}`
+    const url = `${window.location.origin}/app?r=${encodeURIComponent(uri)}`
     setLink(url)
     setQr(await toQrDataUrl(url))
   }
   return (
-    <div className="space-y-4 pt-4">
-      <BackHeader title="Request money" onBack={onBack} />
+    <div className="animate-float-up pt-2">
+      <div className="mb-5 text-center">
+        <Eyebrow className="justify-center">Request money</Eyebrow>
+        <h2 className="mt-1 font-display text-[22px] font-black text-ink">Make a “pay me” QR</h2>
+      </div>
+
       {qr && link ? (
-        <div className="card flex flex-col items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qr} alt="payment request QR" className="h-56 w-56 rounded-xl2" />
-          <div className="text-center text-sm text-muted">Show this to the payer. They scan, sign offline, and it settles on reconnect.</div>
-          <button className="btn-ghost w-full" onClick={() => { navigator.clipboard?.writeText(link); flash("Link copied") }}><Copy className="h-4 w-4" /> Copy link</button>
-          <button className="text-xs text-gold" onClick={() => { setQr(null); setLink(null) }}>New request</button>
-        </div>
+        <Card className="flex flex-col items-center !py-6">
+          <div className="rounded-2xl bg-white p-3 shadow-card ring-1 ring-slate-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={qr} alt="payment request QR" className="h-44 w-44 rounded-xl" />
+          </div>
+          <div className="mt-3 text-center">
+            <GAmount value={amount || "0"} size="text-[26px]" />
+            <div className="mt-0.5 text-[13px] font-semibold text-slate2">
+              to {label || "you"}
+              {memo ? ` · ${memo}` : ""}
+            </div>
+          </div>
+          <Chip tone="lilac" className="mt-3" icon={<WifiOff size={13} />}>
+            Works offline
+          </Chip>
+          <PillButton variant="secondary" size="block" className="mt-4" icon={<Copy size={18} />} onClick={() => { navigator.clipboard?.writeText(link); flash("Link copied") }}>
+            Copy link
+          </PillButton>
+          <button className="press mt-2 font-display text-[13px] font-bold text-violet2-deep" onClick={() => { setQr(null); setLink(null) }}>
+            New request
+          </button>
+        </Card>
       ) : (
-        <div className="card space-y-3">
-          <div><div className="label mb-1">Amount (G$)</div><input className="field" inputMode="decimal" placeholder="30" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
-          <div><div className="label mb-1">Your name / stall (optional)</div><input className="field" placeholder="Tea Stall" value={label} onChange={(e) => setLabel(e.target.value)} /></div>
-          <div><div className="label mb-1">Memo (optional)</div><input className="field" placeholder="chai" value={memo} onChange={(e) => setMemo(e.target.value)} /></div>
-          <button className="btn-primary w-full" onClick={make}><QrCode className="h-5 w-5" /> Create QR</button>
-        </div>
+        <>
+          <div className="space-y-3">
+            <Field label="Amount" value={amount} onChange={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} inputMode="decimal" suffix="G$" placeholder="30" />
+            <Field label="Your name / stall (optional)" value={label} onChange={setLabel} placeholder="Tea Stall" />
+            <Field label="Memo (optional)" value={memo} onChange={setMemo} placeholder="chai" />
+          </div>
+          <PillButton size="block" className="mt-5" icon={<QrCode size={18} />} onClick={make}>
+            Create QR
+          </PillButton>
+        </>
       )}
     </div>
   )
 }
 
-function SignScreen(props: { intent: PaymentIntent; recipientInput: string; setRecipientInput: (s: string) => void; online: boolean; busy: boolean; onSign: () => void; onBack: () => void; selfAddr: Hex }) {
-  const { intent, recipientInput, setRecipientInput, online, busy, onSign, onBack, selfAddr } = props
+function SignScreen(props: {
+  intent: PaymentIntent
+  recipientInput: string
+  setRecipientInput: (s: string) => void
+  online: boolean
+  busy: boolean
+  onSign: () => void
+  selfAddr: Hex
+}) {
+  const { intent, recipientInput, setRecipientInput, online, busy, onSign, selfAddr } = props
   const isStream = !!intent.period
   return (
-    <div className="space-y-4 pt-4">
-      <BackHeader title="Confirm payment" onBack={onBack} />
-      <div className="card space-y-3 animate-fade-up">
-        <div className="text-center"><div className="text-5xl font-extrabold tracking-tight">{intent.amount}<span className="ml-2 align-middle text-2xl text-gold">G$</span></div>{isStream && <div className="mt-1 text-sm text-gold">streaming · per {intent.period}</div>}</div>
-        <Row label="To">{isAddress(recipientInput) ? <span className="font-mono text-sm">{shortAddr(recipientInput)}</span> : <span className="text-sm text-muted">{intent.recipient}</span>}</Row>
-        {intent.memo && <Row label="For"><span className="text-sm">{intent.memo}</span></Row>}
-        <Row label="Expires"><span className="text-sm">in 14 days</span></Row>
-        <Row label="Gas"><span className="text-sm">paid by relayer in cUSD</span></Row>
-      </div>
-      {!isAddress(recipientInput) && (
-        <div className="card space-y-2">
-          <div className="label">Recipient address</div>
-          <input className="field font-mono text-sm" placeholder="0x…" value={recipientInput} onChange={(e) => setRecipientInput(e.target.value)} />
-          <button className="text-xs text-gold" onClick={() => setRecipientInput(selfAddr)}>use my own address (for testing)</button>
+    <div className="animate-float-up flex min-h-full flex-col pt-2">
+      <div className="text-center">
+        <Eyebrow className="justify-center">Confirm payment</Eyebrow>
+        <div className="mt-4 grid place-items-center">
+          <GAmount value={intent.amount} size="text-[52px]" />
+          <div className="mt-1 text-[14px] font-semibold text-slate2">to {isAddress(recipientInput) ? shortAddr(recipientInput) : intent.recipient}</div>
+          {isStream && <div className="mt-1 text-[13px] font-bold text-violet2-deep">streaming · per {intent.period}</div>}
         </div>
+      </div>
+
+      <Card className="mt-7 !py-1">
+        <KvRow label="To">
+          <span className="font-mono text-[13px]">{isAddress(recipientInput) ? shortAddr(recipientInput) : "—"}</span>
+        </KvRow>
+        <KvRow label="For">{intent.memo || "—"}</KvRow>
+        <KvRow label="Expires in">
+          <span className="inline-flex items-center gap-1.5">
+            <Clock size={15} className="text-violet2" />
+            14 days
+          </span>
+        </KvRow>
+        <KvRow label="Gas" last>
+          <Chip tone="lilac">Paid by relayer · cUSD</Chip>
+        </KvRow>
+      </Card>
+
+      {!isAddress(recipientInput) && (
+        <Card className="mt-3 space-y-2">
+          <Eyebrow>Recipient address</Eyebrow>
+          <input
+            className="field font-mono text-sm"
+            placeholder="0x…"
+            value={recipientInput}
+            onChange={(e) => setRecipientInput(e.target.value)}
+          />
+          <button className="press font-display text-[12px] font-bold text-violet2-deep" onClick={() => setRecipientInput(selfAddr)}>
+            use my own address (for testing)
+          </button>
+        </Card>
       )}
-      <div className={`chip w-full justify-center ${online ? "text-muted" : "text-gold"}`}>{online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}{online ? "Will settle immediately" : "Offline — queues and settles on reconnect"}</div>
-      {isStream ? <button className="btn-ghost w-full" disabled>Streaming coming soon</button> : <button className="btn-primary w-full" onClick={onSign} disabled={busy}>{busy ? "Signing…" : online ? "Sign & pay" : "Sign offline"} <Check className="h-5 w-5" /></button>}
+
+      <div className="mt-5 flex items-center justify-center">
+        {online ? (
+          <Chip tone="cyan" icon={<Wifi size={14} />}>
+            Online · settles instantly
+          </Chip>
+        ) : (
+          <Chip tone="lilac" icon={<WifiOff size={14} />}>
+            Offline · will queue &amp; settle later
+          </Chip>
+        )}
+      </div>
+
+      <div className="mt-auto pt-7">
+        {isStream ? (
+          <PillButton variant="ghost" size="block" disabled>
+            Streaming coming soon
+          </PillButton>
+        ) : (
+          <PillButton size="block" variant={online ? "primary" : "violet"} disabled={busy} icon={online ? <Shield size={18} /> : <Lock size={18} />} onClick={onSign}>
+            {busy ? "Signing…" : online ? "Sign & pay" : "Sign offline"}
+          </PillButton>
+        )}
+        <SignFootnote />
+      </div>
     </div>
   )
 }
 
-function PlanScreen({ actions, online, busy, selfAddr, onRun, onBack }: { actions: Action[]; online: boolean; busy: boolean; selfAddr: Hex; onRun: (a: Action[], r: Record<number, string>) => void; onBack: () => void }) {
+function SignFootnote() {
+  return <p className="mt-3 px-3 text-center text-[12px] leading-relaxed text-muted">Signed locally on this device. The key never leaves your browser.</p>
+}
+
+function PlanScreen({ actions, online, busy, selfAddr, onRun }: { actions: Action[]; online: boolean; busy: boolean; selfAddr: Hex; onRun: (a: Action[], r: Record<number, string>) => void }) {
   const [recips, setRecips] = useState<Record<number, string>>(() => {
     const init: Record<number, string> = {}
-    actions.forEach((a, i) => { if (a.type === "send" && isAddress(a.intent.recipient)) init[i] = a.intent.recipient })
+    actions.forEach((a, i) => {
+      if (a.type === "send" && isAddress(a.intent.recipient)) init[i] = a.intent.recipient
+    })
     return init
   })
   return (
-    <div className="space-y-4 pt-4">
-      <BackHeader title="Your plan" onBack={onBack} />
-      <div className="space-y-2">
-        {actions.map((a, i) => (
-          <div key={i} className="card space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="grid h-7 w-7 place-items-center rounded-full bg-surface-2 text-xs font-bold text-gold">{i + 1}</span>
-              {a.type === "claim" && <span className="font-semibold"><Gift className="mr-1 inline h-4 w-4 text-gold" /> Claim your UBI</span>}
-              {a.type === "send" && <span className="font-semibold"><Send className="mr-1 inline h-4 w-4 text-gold" /> Send {a.intent.amount} G$ {a.intent.memo ? `· ${a.intent.memo}` : ""}</span>}
-              {a.type === "balance" && <span className="font-semibold">Check balance</span>}
-            </div>
-            {a.type === "send" && !isAddress(recips[i] ?? a.intent.recipient) && (
-              <div className="space-y-1">
-                <input className="field font-mono text-xs" placeholder={`0x… (${a.intent.recipient})`} value={recips[i] ?? ""} onChange={(e) => setRecips({ ...recips, [i]: e.target.value })} />
-                <button className="text-xs text-gold" onClick={() => setRecips({ ...recips, [i]: selfAddr })}>use my address</button>
-              </div>
-            )}
-          </div>
-        ))}
+    <div className="animate-float-up flex min-h-full flex-col pt-2">
+      <div className="mb-6 text-center">
+        <Eyebrow className="justify-center">Voice multi-action</Eyebrow>
+        <h2 className="mt-1 font-display text-[22px] font-black text-ink">Your plan, in order</h2>
       </div>
-      <button className="btn-primary w-full" onClick={() => onRun(actions, recips)} disabled={busy}>{busy ? "Running…" : online ? "Run plan" : "Sign plan offline"} <Check className="h-5 w-5" /></button>
+
+      <div className="relative pl-2">
+        <div className="absolute bottom-10 left-[26px] top-3 border-l-2 border-dashed border-lilac-soft" />
+        <div className="space-y-3">
+          {actions.map((a, i) => (
+            <div key={i} className="relative flex gap-3.5">
+              <span className="relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-violet2 font-display text-[14px] font-extrabold text-white shadow-violetglow">
+                {i + 1}
+              </span>
+              <Card className="flex-1 !p-3.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-lilac/25 text-violet2-deep">
+                    {a.type === "claim" ? <Coin size={18} /> : a.type === "send" ? <ArrowUp size={18} /> : <List size={18} />}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-display text-[15px] font-extrabold text-ink">
+                      {a.type === "claim" && "Claim your UBI"}
+                      {a.type === "send" && `Send ${a.intent.amount} G$`}
+                      {a.type === "balance" && "Check balance"}
+                    </div>
+                    <div className="truncate text-[12px] text-muted">
+                      {a.type === "claim" && "Today’s entitlement"}
+                      {a.type === "send" && (a.intent.memo ? a.intent.memo : "From your balance")}
+                      {a.type === "balance" && "Read-only"}
+                    </div>
+                  </div>
+                </div>
+                {a.type === "send" && !isAddress(recips[i] ?? a.intent.recipient) && (
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <input
+                      className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-cream px-3 py-2 font-mono text-[13px] text-ink focus:border-violet2/60 focus:outline-none"
+                      placeholder={`0x… (${a.intent.recipient})`}
+                      value={recips[i] ?? ""}
+                      onChange={(e) => setRecips({ ...recips, [i]: e.target.value })}
+                    />
+                    <button className="press shrink-0 px-2 font-display text-[12px] font-bold text-violet2-deep" onClick={() => setRecips({ ...recips, [i]: selfAddr })}>
+                      use mine
+                    </button>
+                  </div>
+                )}
+              </Card>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-auto pt-7">
+        <PillButton size="block" variant={online ? "primary" : "violet"} disabled={busy} icon={<List size={18} />} onClick={() => onRun(actions, recips)}>
+          {busy ? "Running…" : online ? "Run plan" : "Sign plan offline"}
+        </PillButton>
+        <SignFootnote />
+      </div>
     </div>
   )
 }
 
-function SplitScreen({ draft, online, busy, selfAddr, onRun, onBack }: { draft: { split: SplitIntent; claimFirst: boolean }; online: boolean; busy: boolean; selfAddr: Hex; onRun: (s: SplitIntent, r: string[], claimFirst: boolean) => void; onBack: () => void }) {
-  const { split, claimFirst } = draft
+function SplitScreen({ draft, online, busy, selfAddr, onRun }: { draft: { split: SplitIntent; claimFirst: boolean }; online: boolean; busy: boolean; selfAddr: Hex; onRun: (s: SplitIntent, r: string[], claimFirst: boolean) => void }) {
+  const { split } = draft
   const n = split.recipients.length
   const [recips, setRecips] = useState<string[]>(() => split.recipients.map((r) => (isAddress(r) ? r : "")))
+  const [claimFirst, setClaimFirst] = useState(draft.claimFirst)
   const shares = splitEvenly(toBaseUnits(split.total), n)
   const set = (i: number, v: string) => setRecips((prev) => prev.map((x, j) => (j === i ? v : x)))
+  const colors = ["bg-cyan/35", "bg-lilac/45", "bg-emerald-100", "bg-amber-100", "bg-sky"]
   return (
-    <div className="space-y-4 pt-4">
-      <BackHeader title="Split a payment" onBack={onBack} />
-      <div className="card text-center animate-fade-up">
-        <div className="text-5xl font-extrabold tracking-tight">{split.total}<span className="ml-2 align-middle text-2xl text-gold">G$</span></div>
-        <div className="mt-1 text-sm text-muted">split {n} ways · {fmtG(shares[0])} G$ each{split.memo ? ` · ${split.memo}` : ""}</div>
-        {claimFirst && <div className="mt-2 chip mx-auto w-fit text-gold"><Gift className="h-3.5 w-3.5" /> claims your UBI first</div>}
+    <div className="animate-float-up flex min-h-full flex-col pt-2">
+      <div className="text-center">
+        <Eyebrow className="justify-center">Claim-and-Split</Eyebrow>
+        <div className="mt-3 grid place-items-center">
+          <GAmount value={split.total} size="text-[46px]" />
+          <div className="mt-1 text-[14px] font-semibold text-slate2">
+            split {n} ways · {fmtG(shares[0])} G$ each{split.memo ? ` · ${split.memo}` : ""}
+          </div>
+        </div>
       </div>
-      <div className="space-y-2">
+
+      <button
+        onClick={() => setClaimFirst((v) => !v)}
+        className={`press mt-5 inline-flex items-center gap-2 self-center rounded-full px-3.5 py-1.5 font-display text-[13px] font-bold ${claimFirst ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate2"}`}
+      >
+        <span className={`grid h-4 w-4 place-items-center rounded-full ${claimFirst ? "bg-emerald-500 text-white" : "bg-slate-300 text-white"}`}>{claimFirst && <Check size={12} />}</span>
+        Claims your UBI first
+      </button>
+
+      <div className="mt-5 space-y-3">
         {split.recipients.map((name, i) => (
-          <div key={i} className="card space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold">{isAddress(name) ? shortAddr(name) : name}</span>
-              <span className="text-sm text-gold">{fmtG(shares[i])} G$</span>
+          <Card key={i} className="!p-3.5">
+            <div className="flex items-center gap-3">
+              <span className={`grid h-10 w-10 place-items-center rounded-full font-display font-extrabold text-ink ${colors[i % colors.length]}`}>
+                {isAddress(name) ? "0x" : name[0]?.toUpperCase()}
+              </span>
+              <div className="flex-1">
+                <div className="font-display text-[15px] font-extrabold text-ink">{isAddress(name) ? shortAddr(name) : name}</div>
+                <div className="text-[12px] text-muted">recipient {i + 1}</div>
+              </div>
+              <Chip tone="green">{fmtG(shares[i])} G$</Chip>
             </div>
             {!isAddress(recips[i]) && (
-              <div className="space-y-1">
-                <input className="field font-mono text-xs" placeholder="0x… address" value={recips[i]} onChange={(e) => set(i, e.target.value)} />
-                <button className="text-xs text-gold" onClick={() => set(i, selfAddr)}>use my address</button>
+              <div className="mt-2.5 flex items-center gap-2">
+                <input
+                  value={recips[i]}
+                  onChange={(e) => set(i, e.target.value)}
+                  placeholder="0x… address"
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-cream px-3 py-2 font-mono text-[13px] text-ink placeholder:text-muted focus:border-violet2/60 focus:outline-none"
+                />
+                <button onClick={() => set(i, selfAddr)} className="press shrink-0 whitespace-nowrap px-2 font-display text-[12px] font-bold text-violet2-deep">
+                  use mine
+                </button>
               </div>
             )}
-          </div>
+          </Card>
         ))}
       </div>
-      <div className={`chip w-full justify-center ${online ? "text-muted" : "text-gold"}`}>{online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}{online ? "One signature — everyone gets paid" : "Offline — one signature now, pays everyone on reconnect"}</div>
-      <button className="btn-primary w-full" onClick={() => onRun(split, recips, claimFirst)} disabled={busy}>{busy ? "Signing…" : online ? "Sign & split" : "Sign split offline"} <Check className="h-5 w-5" /></button>
+
+      <div className="mt-auto pt-7">
+        <PillButton size="block" variant={online ? "primary" : "violet"} disabled={busy} icon={<Split size={18} />} onClick={() => onRun(split, recips, claimFirst)}>
+          {busy ? "Signing…" : online ? "Sign & split" : "Sign split offline"}
+        </PillButton>
+        <p className="mt-3 text-center text-[12px] text-muted">One signature — everyone gets paid.</p>
+      </div>
     </div>
   )
 }
 
-function SettledScreen({ entry, onDone, onActivity }: { entry: QueuedItem; onDone: () => void; onActivity: () => void }) {
+function SettledScreen({ entry, online, onDone, onActivity }: { entry: QueuedItem; online: boolean; onDone: () => void; onActivity: () => void }) {
+  const queued = entry.status !== "settled"
+  const isClaim = entry.kind === "claim"
+  const title = queued ? (isClaim ? "Queued" : "Queued") : isClaim ? "Claimed!" : "Sent!"
+  const to =
+    entry.kind === "payment"
+      ? `to ${shortAddr(entry.relay.recipient)}`
+      : entry.kind === "split"
+        ? `to ${entry.split.recipients.length} recipients`
+        : "added to your wallet"
   return (
-    <div className="flex flex-col items-center pt-10 text-center">
-      <div className="grid h-24 w-24 animate-fade-up place-items-center rounded-full bg-ok/15 text-ok"><Check className="h-12 w-12" /></div>
-      <h2 className="mt-5 text-2xl font-bold">{entry.status === "settled" ? "Sent!" : "Queued"}</h2>
-      <p className="mt-1 text-muted">{itemLabel(entry)}{entry.kind === "payment" ? ` to ${shortAddr(entry.relay.recipient)}` : entry.kind === "split" ? ` to ${entry.split.recipients.length} recipients` : ""}</p>
-      {entry.txHash ? <a className="chip mt-4 text-gold" href={txLink(entry.txHash)} target="_blank" rel="noreferrer">View on Celoscan <Arrow className="h-3.5 w-3.5" /></a> : null}
-      <div className="mt-8 w-full space-y-2"><button className="btn-primary w-full" onClick={onDone}>Done</button><button className="btn-ghost w-full" onClick={onActivity}>View activity</button></div>
+    <div className="animate-float-up flex min-h-full flex-col items-center justify-center px-2 py-10 text-center" style={{ background: "linear-gradient(180deg,#ffffff 0%,#f5f3ff 70%,#ede9fe 100%)" }}>
+      <KumoMascot state={queued ? "sleeping" : "celebrating"} width={180} coin />
+      <h1 className="mt-6 font-display text-[32px] font-black text-ink">{title}</h1>
+      <p className="mt-2 max-w-[260px] text-[15px] font-semibold text-slate2">
+        {queued ? "Saved offline. It settles itself the moment you reconnect." : online ? "Settled on Celo — gas paid by the relayer." : "Done."}
+      </p>
+
+      <Card className="mt-7 w-full !py-4">
+        <div className="flex items-center justify-center gap-2">
+          <span className="font-display text-[18px] font-bold text-ink">{itemLabel(entry)}</span>
+        </div>
+        <div className="mt-1 text-[13px] font-semibold text-slate2">{to}</div>
+        <div className="mt-3 flex justify-center">
+          {entry.txHash ? (
+            <a
+              href={txLink(entry.txHash)}
+              target="_blank"
+              rel="noreferrer"
+              className="press inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 font-display text-[12.5px] font-bold text-slate2 hover:bg-slate-200"
+            >
+              <Globe size={14} /> View on Celoscan <Arrow size={13} />
+            </a>
+          ) : (
+            <StatusPill status={entry.status as ItemStatus} />
+          )}
+        </div>
+      </Card>
+
+      <div className="mt-7 grid w-full grid-cols-2 gap-3">
+        <PillButton variant="secondary" size="lg" onClick={onActivity} icon={<ActivityIcon size={18} />}>
+          Activity
+        </PillButton>
+        <PillButton size="lg" onClick={onDone}>
+          Done
+        </PillButton>
+      </div>
     </div>
   )
 }
 
 function ActivityScreen({ queue, online, onFlush, onRemove }: { queue: QueuedItem[]; online: boolean; onFlush: () => void; onRemove: (id: string) => void }) {
-  const pend = pending(queue)
-  return (
-    <div className="space-y-4 pt-6">
-      <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Activity</h2>{pend.length > 0 && online && <button className="chip text-gold" onClick={onFlush}>Settle all ({pend.length})</button>}</div>
-      {queue.length === 0 ? <div className="card text-sm text-muted">Nothing here yet.</div> : <div className="space-y-2">{queue.map((e) => <ActivityRow key={e.id} e={e} onRemove={onRemove} expanded />)}</div>}
-    </div>
-  )
-}
-
-function ActivityRow({ e, onRemove, expanded }: { e: QueuedItem; onRemove?: (id: string) => void; expanded?: boolean }) {
-  const now = Math.floor(Date.now() / 1000)
-  const color = e.status === "settled" ? "text-ok" : e.status === "failed" || e.status === "expired" ? "text-danger" : "text-gold"
-  return (
-    <div className="card flex items-center justify-between gap-3 py-3.5">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          {e.kind === "claim" ? <Gift className="h-4 w-4 text-gold" /> : <Send className="h-4 w-4 text-muted" />}
-          <span className="font-semibold">{itemLabel(e)}</span>
-          {e.kind === "payment" && <span className="text-xs text-muted">→ {shortAddr(e.relay.recipient)}</span>}
-          {e.kind === "split" && <span className="text-xs text-muted">→ {e.split.recipients.length} recipients</span>}
+  const pend = queue.filter((a) => a.status === "queued" || a.status === "settling")
+  const done = queue.filter((a) => a.status === "settled")
+  const problem = queue.filter((a) => a.status === "failed" || a.status === "expired")
+  const Group = ({ title, items }: { title: string; items: QueuedItem[] }) =>
+    items.length ? (
+      <div className="mb-5">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <Eyebrow>{title}</Eyebrow>
         </div>
-        <div className="mt-0.5 flex items-center gap-2 text-xs">
-          <span className={color}>{statusLabel(e.status)}</span>
-          <span className="text-muted">· {relTime(e.createdAt)}</span>
-          {(e.kind === "payment" || e.kind === "split") && e.status === "queued" && <span className="text-muted">· {expiresInLabel(e.relay.deadline, now)}</span>}
+        <Card className="!p-2">
+          {items.map((e, i) => (
+            <ActivityRow key={e.id} e={e} last={i === items.length - 1} onRemove={onRemove} />
+          ))}
+        </Card>
+      </div>
+    ) : null
+  return (
+    <div className="animate-float-up pt-4">
+      <div className="mb-4 flex items-center justify-between px-1">
+        <h2 className="font-display text-[22px] font-black text-ink">Activity</h2>
+        {pend.length > 0 && online && (
+          <PillButton size="sm" variant="violet" onClick={onFlush} icon={<Bolt size={14} />}>
+            Settle all ({pend.length})
+          </PillButton>
+        )}
+      </div>
+      {!online && pend.length > 0 && (
+        <div className="mb-4 flex items-center gap-2.5 rounded-2xl bg-lilac/25 px-4 py-3">
+          <WifiOff size={18} className="shrink-0 text-violet2-deep" />
+          <span className="text-[13px] font-semibold text-violet2-deep">{pend.length} waiting offline · settles when you reconnect</span>
         </div>
-        {expanded && e.failureReason && <div className="mt-1 truncate text-xs text-danger">{e.failureReason}</div>}
-      </div>
-      <div className="flex items-center gap-2">
-        {e.txHash && <a className="text-gold" href={txLink(e.txHash)} target="_blank" rel="noreferrer"><Arrow className="h-4 w-4" /></a>}
-        {expanded && onRemove && (e.status === "settled" || e.status === "failed" || e.status === "expired") && <button className="text-xs text-muted" onClick={() => onRemove(e.id)}>clear</button>}
-      </div>
+      )}
+      {queue.length === 0 ? (
+        <Card className="text-sm text-slate2">Nothing here yet. Tap Pay, or Claim your UBI.</Card>
+      ) : (
+        <>
+          <Group title="Pending" items={pend} />
+          <Group title="Needs attention" items={problem} />
+          <Group title="Settled" items={done} />
+        </>
+      )}
     </div>
   )
 }
 
 function IdentityScreen({ identity, ubi, address, streak, onClaim, busy, flash }: { identity: IdentityStatus | null; ubi: bigint | null; address: Hex; streak: Streak; onClaim: () => void; busy: boolean; flash: (m: string) => void }) {
   const canClaim = ubi != null && ubi > 0n
+  const verified = !!identity?.isWhitelisted
   const [verifying, setVerifying] = useState(false)
   const verify = async () => {
     setVerifying(true)
-    const res = await startFaceVerification(`${window.location.origin}/?verified=1`)
+    const res = await startFaceVerification(`${window.location.origin}/app?verified=1`)
     setVerifying(false)
     if (!res.bound) flash("Opening GoodDollar verification…")
     window.location.href = res.url
   }
   return (
-    <div className="space-y-4 pt-6">
-      <h2 className="text-xl font-bold">Identity &amp; UBI</h2>
-      <div className="card space-y-3">
-        <div className="flex items-center gap-3"><Shield className={`h-8 w-8 ${identity?.isWhitelisted ? "text-ok" : "text-muted"}`} /><div><div className="font-semibold">{identity?.isWhitelisted ? "Verified human" : "Not verified"}</div><div className="text-xs text-muted">GoodDollar Identity · {shortAddr(address)}</div></div></div>
-        {!identity?.isWhitelisted && <button className="btn-ghost w-full" onClick={verify} disabled={verifying}>{verifying ? "Preparing…" : "Verify with face scan"} <Arrow className="h-4 w-4" /></button>}
-      </div>
-      <div className="card flex items-center justify-between">
-        <div className="flex items-center gap-3"><Flame className="h-7 w-7 text-gold" /><div><div className="font-semibold">{streak.count}-day claim streak</div><div className="text-xs text-muted">best {streak.best} · keep claiming daily</div></div></div>
-      </div>
-      <div className="card space-y-3">
-        <div className="label">Daily UBI entitlement</div>
-        <div className="text-3xl font-extrabold">{ubi == null ? "—" : fmtG(ubi)} <span className="text-xl text-gold">G$</span></div>
-        <button className="btn-primary w-full" onClick={onClaim} disabled={busy || !canClaim}><Gift className="h-5 w-5" /> {canClaim ? "Claim today's UBI" : "Already claimed today"}</button>
-        <p className="text-xs text-muted">Gasless via the relayer. Verification is required to receive UBI.</p>
-      </div>
+    <div className="animate-float-up space-y-4 pt-4">
+      <h2 className="px-1 font-display text-[22px] font-black text-ink">Identity &amp; UBI</h2>
+
+      {/* verification */}
+      <Card className={verified ? "ring-1 ring-emerald-100" : ""}>
+        <div className="flex items-center gap-3.5">
+          <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${verified ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}>
+            {verified ? <CheckCircle size={26} /> : <Face size={26} />}
+          </span>
+          <div className="flex-1">
+            <div className="font-display text-[16px] font-extrabold text-ink">{verified ? "Verified human" : "Not verified"}</div>
+            <div className="text-[13px] text-slate2">{verified ? `GoodDollar Identity · ${shortAddr(address)}` : "Verify to unlock your UBI claim."}</div>
+          </div>
+          {!verified && (
+            <PillButton size="sm" onClick={verify} disabled={verifying} icon={<Face size={16} />}>
+              {verifying ? "…" : "Verify"}
+            </PillButton>
+          )}
+        </div>
+      </Card>
+
+      {/* streak */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <Eyebrow>Claim streak</Eyebrow>
+          <Chip tone="amber" icon={<Flame size={14} />}>
+            best {streak.best}
+          </Chip>
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+            <span
+              key={i}
+              className={`grid h-8 w-8 place-items-center rounded-full font-display text-[13px] font-extrabold ${
+                i < streak.count ? "bg-violet2 text-white" : i === streak.count ? "bg-cyan/40 text-ink ring-2 ring-cyan" : "bg-slate-100 text-muted"
+              }`}
+            >
+              {i < streak.count ? <Flame size={15} /> : d}
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 text-[13.5px] font-semibold text-slate2">{streak.count}-day claim streak · keep it going!</p>
+      </Card>
+
+      {/* UBI entitlement */}
+      <Card className="relative overflow-hidden">
+        <div className="absolute -bottom-8 -right-6 opacity-15">
+          <CloudMark size={110} color="#7FE8FF" />
+        </div>
+        <div className="relative">
+          <Eyebrow>Daily UBI entitlement</Eyebrow>
+          <div className="mt-2 flex items-end justify-between">
+            <GAmount value={ubi == null ? "—" : fmtG(ubi)} size="text-[34px]" />
+            <Chip tone="lilac">Gasless · relayer</Chip>
+          </div>
+          <PillButton size="block" className="mt-4" variant="violet" disabled={busy || !canClaim} icon={<Coin size={18} />} onClick={onClaim}>
+            {canClaim ? "Claim today’s UBI" : "Already claimed today"}
+          </PillButton>
+          <p className="mt-2 text-center text-[12px] text-muted">Gasless via the relayer. Verification is required to receive UBI.</p>
+        </div>
+      </Card>
     </div>
+  )
+}
+
+// Offline voice (on-device Whisper) — download / enable, lives on the Wallet (options) screen.
+function OfflineVoiceCard({ flash }: { flash: (m: string) => void }) {
+  const [supported, setSupported] = useState(true)
+  const [downloaded, setDownloaded] = useState(false)
+  const [enabled, setEnabled] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [progress, setProgress] = useState<VoiceProgress | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setSupported(voiceModelSupported() && micSupported())
+    setDownloaded(isVoiceDownloaded())
+    setEnabled(isVoiceEnabled())
+  }, [])
+
+  const onDownload = async () => {
+    setError(null)
+    setDownloading(true)
+    try {
+      await downloadVoiceModel((p) => setProgress(p))
+      setDownloaded(true)
+      setEnabled(true)
+      setVoiceEnabled(true)
+      flash("Offline voice ready 🎤")
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setDownloading(false)
+      setProgress(null)
+    }
+  }
+
+  const toggle = () => {
+    const v = !enabled
+    setEnabled(v)
+    setVoiceEnabled(v)
+  }
+
+  const pct = progress ? Math.round(progress.pct * 100) : 0
+  const mb = (n: number) => `${Math.round(n / 1e6)} MB`
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between">
+        <Eyebrow>Offline voice</Eyebrow>
+        {downloaded ? (
+          <Chip tone="green" icon={<Check size={13} />}>
+            Ready
+          </Chip>
+        ) : (
+          <Chip tone="lilac">Optional</Chip>
+        )}
+      </div>
+      <div className="mt-2 flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-lilac/30 text-violet2-deep">
+          <Mic size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="font-display text-[15px] font-extrabold text-ink">{VOICE_MODEL_LABEL}</div>
+          <div className="text-[12px] text-muted">{VOICE_MODEL_SIZE_LABEL} · one-time download · stays on your device</div>
+        </div>
+      </div>
+
+      {!supported ? (
+        <p className="mt-3 text-[12px] text-muted">This browser can’t run on-device voice. You can still type, or use online voice where supported.</p>
+      ) : downloading ? (
+        <div className="mt-4">
+          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-violet2 transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="mt-2 flex items-center justify-between font-display text-[12px] font-bold text-slate2">
+            <span>{pct}% {progress ? `· ${mb(progress.loadedBytes)} / ${mb(progress.totalBytes)}` : "· starting…"}</span>
+            <span className="text-violet2-deep">downloading…</span>
+          </div>
+        </div>
+      ) : downloaded ? (
+        <button onClick={toggle} className="press mt-4 flex w-full items-center justify-between rounded-xl bg-cream px-3.5 py-2.5">
+          <span className="font-display text-[13.5px] font-bold text-ink">Use voice offline</span>
+          <span className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? "bg-violet2" : "bg-slate-300"}`}>
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${enabled ? "left-[22px]" : "left-0.5"}`} />
+          </span>
+        </button>
+      ) : (
+        <PillButton variant="violet" size="block" className="mt-4" icon={<Download size={18} />} onClick={onDownload}>
+          Download {VOICE_MODEL_SIZE_LABEL}
+        </PillButton>
+      )}
+
+      {error && <p className="mt-2 text-[12px] text-red-600">{error}</p>}
+      <p className="mt-2 text-[12px] text-muted">Lets you dictate payments with no signal. Without it, voice uses the network and typing always works.</p>
+    </Card>
   )
 }
 
 function WalletScreen({ address, relayer, onReset, onImport, flash }: { address: Hex; relayer: RelayerInfo | null; onReset: () => void; onImport: (pk: string) => void; flash: (m: string) => void }) {
   const [revealed, setRevealed] = useState(false)
   const [importPk, setImportPk] = useState("")
+  const [copied, setCopied] = useState(false)
   const pk = revealed ? loadKey() : null
-  const copy = (v: string, label: string) => { navigator.clipboard?.writeText(v); flash(`${label} copied`) }
+  const copyAddr = () => {
+    navigator.clipboard?.writeText(address)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
   return (
-    <div className="space-y-4 pt-6">
-      <h2 className="text-xl font-bold">Wallet</h2>
-      <div className="card space-y-2"><div className="label">Address</div><button className="flex items-center justify-between gap-2" onClick={() => copy(address, "Address")}><span className="font-mono text-sm">{shortAddr(address)}</span><Copy className="h-4 w-4 text-muted" /></button></div>
-      <div className="card space-y-2"><div className="label">Private key (burner)</div>{pk ? <button className="break-all text-left font-mono text-xs text-gold" onClick={() => copy(pk, "Private key")}>{pk}</button> : <button className="btn-ghost w-full" onClick={() => setRevealed(true)}>Reveal private key</button>}<p className="text-xs text-muted">Stored only in this browser. Export it to keep your funds.</p></div>
-      <div className="card space-y-2"><div className="label">Network</div><KV k="Chain" v={String(relayer?.chainId ?? CHAIN_ID)} /><KV k="Relayer" v={relayer?.relayerAddress ? shortAddr(relayer.relayerAddress) : relayer?.dryRun ? "dry-run" : "not connected"} /><KV k="Gas paid in" v={relayer?.feeCurrency ?? "—"} /></div>
-      <div className="card space-y-2"><div className="label">Import a different key</div><input className="field font-mono text-xs" placeholder="0x… private key" value={importPk} onChange={(e) => setImportPk(e.target.value)} /><button className="btn-ghost w-full" onClick={() => { onImport(importPk); setImportPk("") }} disabled={!importPk.trim()}>Import</button></div>
-      <button className="btn-ghost w-full text-danger" onClick={() => { if (confirm("Reset wallet? Export your key first or funds are lost.")) onReset() }}>Reset wallet</button>
+    <div className="animate-float-up space-y-4 pt-4">
+      <h2 className="px-1 font-display text-[22px] font-black text-ink">Wallet</h2>
+
+      {/* address */}
+      <Card>
+        <Eyebrow>Your address</Eyebrow>
+        <div className="mt-2.5 flex items-center gap-2.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cyan/30 text-ink">
+            <Wallet size={18} />
+          </span>
+          <span className="flex-1 truncate font-mono text-[14px] text-ink">{shortAddr(address)}</span>
+          <button onClick={copyAddr} aria-label="Copy address" className="press grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-ink hover:bg-slate-200">
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+          </button>
+        </div>
+      </Card>
+
+      {/* reveal key */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <Eyebrow>Private key</Eyebrow>
+            <div className="mt-1 text-[13px] text-slate2">Burner wallet · back it up</div>
+          </div>
+          <button onClick={() => setRevealed((v) => !v)} className="press inline-flex items-center gap-1.5 font-display text-[13px] font-bold text-violet2-deep">
+            {revealed ? <Lock size={15} /> : <Eye size={15} />}
+            {revealed ? "Hide" : "Reveal"}
+          </button>
+        </div>
+        {pk ? (
+          <button
+            className="mt-2.5 block w-full break-all rounded-xl bg-ink/95 px-3.5 py-3 text-left font-mono text-[12.5px] text-cyan"
+            onClick={() => { navigator.clipboard?.writeText(pk); flash("Private key copied") }}
+          >
+            {pk}
+          </button>
+        ) : (
+          <div className="mt-2.5 rounded-xl bg-ink/95 px-3.5 py-3 font-mono text-[12.5px] text-transparent select-none" style={{ textShadow: "0 0 9px rgba(255,255,255,0.55)" }}>
+            •••• •••• •••• •••• •••• •••• •••• ••••
+          </div>
+        )}
+        <p className="mt-2 text-[12px] text-muted">Stored only in this browser. Export it to keep your funds.</p>
+      </Card>
+
+      {/* network */}
+      <Card className="!py-1">
+        <KvRow label="Chain">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-amber-400" />
+            {IS_MAINNET ? "Celo" : String(relayer?.chainId ?? CHAIN_ID)}
+          </span>
+        </KvRow>
+        <KvRow label="Relayer">{relayer?.relayerAddress ? shortAddr(relayer.relayerAddress) : relayer?.dryRun ? "dry-run" : "not connected"}</KvRow>
+        <KvRow label="Gas paid in" last>
+          <Chip tone="green">{relayer?.feeCurrency ?? "—"}</Chip>
+        </KvRow>
+      </Card>
+
+      {/* offline voice */}
+      <OfflineVoiceCard flash={flash} />
+
+      {/* import */}
+      <Card className="space-y-2">
+        <Eyebrow>Import a different key</Eyebrow>
+        <input className="field font-mono text-xs" placeholder="0x… private key" value={importPk} onChange={(e) => setImportPk(e.target.value)} />
+        <PillButton variant="secondary" size="block" disabled={!importPk.trim()} icon={<Download size={18} />} onClick={() => { onImport(importPk); setImportPk("") }}>
+          Import
+        </PillButton>
+      </Card>
+
+      <PillButton variant="danger" size="block" icon={<Trash size={18} />} onClick={() => { if (confirm("Reset wallet? Export your key first or funds are lost.")) onReset() }}>
+        Reset wallet
+      </PillButton>
+      <p className="px-6 text-center text-[12px] text-muted">Resetting erases this in-browser wallet. Make sure you’ve saved your key.</p>
     </div>
   )
 }
 
-// --- small UI helpers ------------------------------------------------------
-function statusLabel(s: QueuedItem["status"]): string {
-  return { queued: "queued", settling: "settling…", settled: "settled", failed: "failed", expired: "expired" }[s]
+// --- small UI ---------------------------------------------------------------
+function Toast({ message }: { message: string }) {
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 mx-auto w-fit max-w-[90%] animate-pop">
+      <div className="flex items-center gap-2.5 rounded-full bg-ink py-2.5 pl-3 pr-4 text-white shadow-cardlg">
+        <span className="grid h-6 w-6 place-items-center rounded-full bg-emerald-500">
+          <Check size={15} />
+        </span>
+        <span className="font-display text-[14px] font-bold">{message}</span>
+      </div>
+    </div>
+  )
 }
-function BackHeader({ title, onBack }: { title: string; onBack: () => void }) {
-  return <div className="flex items-center gap-3"><button className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface-2" onClick={onBack}><Arrow className="h-4 w-4 rotate-180" /></button><h2 className="text-lg font-bold">{title}</h2></div>
-}
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="flex items-center justify-between border-b border-dashed border-line pb-2 last:border-0 last:pb-0"><span className="label">{label}</span>{children}</div>
-}
-function KV({ k, v }: { k: string; v: string }) {
-  return <div className="flex items-center justify-between text-sm"><span className="text-muted">{k}</span><span className="font-mono">{v}</span></div>
-}
+
 function TabBar({ screen, setScreen, queueCount }: { screen: Screen; setScreen: (s: Screen) => void; queueCount: number }) {
-  const tabs: { id: Screen; icon: React.ReactNode; label: string; badge?: number }[] = [
-    { id: "home", icon: <Home className="h-5 w-5" />, label: "Home" },
-    { id: "activity", icon: <Clock className="h-5 w-5" />, label: "Activity", badge: queueCount },
-    { id: "identity", icon: <Shield className="h-5 w-5" />, label: "Identity" },
-    { id: "wallet", icon: <Wallet className="h-5 w-5" />, label: "Wallet" },
+  const tabs: { id: Screen; icon: (p: { size?: number; stroke?: number; style?: React.CSSProperties }) => React.ReactNode; label: string; badge?: number }[] = [
+    { id: "home", icon: Home, label: "Home" },
+    { id: "activity", icon: ActivityIcon, label: "Activity", badge: queueCount },
+    { id: "identity", icon: IdentityIcon, label: "Identity" },
+    { id: "wallet", icon: Wallet, label: "Wallet" },
   ]
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto flex w-full max-w-[440px] items-center justify-around border-t border-line bg-ink/90 px-2 pb-[max(env(safe-area-inset-bottom),10px)] pt-2.5 backdrop-blur">
-      {tabs.map((t) => (
-        <button key={t.id} onClick={() => setScreen(t.id)} className={`relative flex flex-col items-center gap-1 px-3 py-1 text-[11px] ${screen === t.id ? "text-gold" : "text-muted"}`}>{t.icon}{t.label}{t.badge ? <span className="absolute right-1.5 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-gold px-1 text-[10px] font-bold text-ink">{t.badge}</span> : null}</button>
-      ))}
+    <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto flex w-full max-w-[440px] items-stretch justify-around border-t border-slate-100 bg-white/95 px-3 pb-[max(env(safe-area-inset-bottom),8px)] pt-1 backdrop-blur">
+      {tabs.map((t) => {
+        const active = screen === t.id
+        const Icon = t.icon
+        return (
+          <button
+            key={t.id}
+            onClick={() => setScreen(t.id)}
+            aria-label={t.label}
+            aria-current={active}
+            className="press relative flex flex-1 flex-col items-center justify-center gap-1 pt-1.5"
+          >
+            {active && <span className="absolute top-0 h-1 w-8 rounded-full bg-violet2" />}
+            <span style={{ color: active ? "#7c5cff" : "#94a3b8" }}>
+              <Icon size={23} stroke={active ? 2.3 : 1.9} />
+            </span>
+            <span className="font-display text-[11px] font-bold" style={{ color: active ? "#7c5cff" : "#94a3b8" }}>
+              {t.label}
+            </span>
+            {t.badge ? (
+              <span className="absolute right-3 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-violet2 px-1 text-[10px] font-bold text-white">{t.badge}</span>
+            ) : null}
+          </button>
+        )
+      })}
     </nav>
   )
 }

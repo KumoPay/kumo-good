@@ -4,6 +4,11 @@ export function fmtG(units: bigint, maxFrac = 2): string {
   return formatUnits(units, 18, maxFrac)
 }
 
+/** Format any token balance to its own decimals (trailing zeros trimmed). */
+export function fmtToken(units: bigint, decimals = 18, maxFrac = 4): string {
+  return formatUnits(units, decimals, maxFrac)
+}
+
 export function shortAddr(addr?: string | null): string {
   if (!addr) return "—"
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`

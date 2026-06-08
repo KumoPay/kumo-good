@@ -1,0 +1,22 @@
+# Cloud Build: build the relayer image from services/relayer/Dockerfile with the
+# build context at the REPO ROOT (so the pnpm workspace / packages/shared is in
+# context), then push to Artifact Registry. Deploy step is done via `gcloud run
+# deploy` (see DEPLOY.md) so env vars / secrets aren't baked into the build.
+#
+#   gcloud builds submit --config services/relayer/cloudbuild.yaml .
+#
+# $PROJECT_ID is substituted automatically by Cloud Build. Region is us-central1
+# to match the Artifact Registry repo created in DEPLOY.md.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - services/relayer/Dockerfile
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/kumo/relayer:latest
+      - .
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/kumo/relayer:latest
+options:
+  logging: CLOUD_LOGGING_ONLY

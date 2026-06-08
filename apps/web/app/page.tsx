@@ -1,11 +1,5 @@
-import App from "@/components/App"
-import { SwRegister } from "@/components/SwRegister"
+import Landing from "@/components/Landing"
 
 export default function Page() {
-  return (
-    <>
-      <App />
-      <SwRegister />
-    </>
-  )
+  return <Landing />
 }

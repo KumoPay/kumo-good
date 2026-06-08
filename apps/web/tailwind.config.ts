@@ -1,37 +1,63 @@
 import type { Config } from "tailwindcss"
 
+// Kumo light "cloud" design language — palette, type and motion ported from the
+// Claude-design handoff bundle (kumogood/project/KumoGood.html).
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        ink: "#0B0E14",
-        surface: "#141A24",
-        "surface-2": "#1C2533",
-        line: "#28333F",
-        gold: "#FFC24B", // G$
-        "gold-deep": "#E8A52E",
-        teal: "#34D8C4",
-        text: "#EAF0F7",
-        muted: "#8995A6",
-        danger: "#FF6B6B",
-        ok: "#46D38A",
+        ink: "#0B1020",
+        slate2: "#64748b",
+        muted: "#94a3b8",
+        cream: "#FAFCFF",
+        cyan: { DEFAULT: "#7FE8FF", soft: "#B7F1FF" },
+        sky: "#B7F1FF",
+        violet2: { DEFAULT: "#7c5cff", deep: "#6d28d9", soft: "#8b5cf6" },
+        lilac: { DEFAULT: "#C7B5FF", soft: "#c4b5fd" },
+        hair: "#C4CCD8",
+        gpos: "#16a34a", // G$ amount green
+        // semantic aliases kept so existing utility names keep working
+        text: "#0B1020",
+        ok: "#16a34a",
+        danger: "#dc2626",
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "Inter", "system-ui", "sans-serif"],
+        body: ["var(--font-body)", '"Nunito Sans"', "system-ui", "sans-serif"],
+        sans: ["var(--font-body)", '"Nunito Sans"', "system-ui", "sans-serif"],
       },
-      borderRadius: { xl2: "1.25rem" },
+      borderRadius: { card: "18px", xl2: "20px" },
       boxShadow: {
-        card: "0 8px 30px -12px rgba(0,0,0,0.6)",
-        glow: "0 0 0 1px rgba(255,194,75,0.25), 0 10px 40px -12px rgba(255,194,75,0.35)",
+        card: "0 8px 20px rgba(11,16,32,0.05)",
+        cardlg: "0 14px 40px rgba(11,16,32,0.08)",
+        glow: "0 6px 18px rgba(127,232,255,0.45)",
+        glowlg: "0 10px 30px rgba(127,232,255,0.55)",
+        violetglow: "0 10px 30px rgba(124,92,255,0.35)",
+        phone: "0 40px 90px -20px rgba(11,16,32,0.45)",
       },
       keyframes: {
-        "fade-up": { from: { opacity: "0", transform: "translateY(8px)" }, to: { opacity: "1", transform: "translateY(0)" } },
-        pulseRing: { "0%": { boxShadow: "0 0 0 0 rgba(52,216,196,0.45)" }, "100%": { boxShadow: "0 0 0 16px rgba(52,216,196,0)" } },
+        breathe: { "0%,100%": { transform: "translateY(0)" }, "50%": { transform: "translateY(-9px)" } },
+        wave: { "0%,100%": { transform: "rotate(0deg)" }, "25%": { transform: "rotate(16deg)" }, "75%": { transform: "rotate(-6deg)" } },
+        driftZ: { "0%": { transform: "translateY(0) scale(0.8)", opacity: "0" }, "20%": { opacity: "1" }, "100%": { transform: "translateY(-34px) scale(1.1)", opacity: "0" } },
+        ring: { "0%": { transform: "scale(0.4)", opacity: "0.9" }, "100%": { transform: "scale(1.6)", opacity: "0" } },
+        sparkle: { "0%,100%": { transform: "scale(0.6) rotate(0deg)", opacity: "0.2" }, "50%": { transform: "scale(1.15) rotate(20deg)", opacity: "1" } },
+        halo: { "0%": { transform: "scale(0.85)", opacity: "0.65" }, "100%": { transform: "scale(1.5)", opacity: "0" } },
+        floatUp: { from: { opacity: "0", transform: "translateY(18px)" }, to: { opacity: "1", transform: "translateY(0)" } },
+        popIn: { "0%": { transform: "scale(0.92)", opacity: "0" }, "100%": { transform: "scale(1)", opacity: "1" } },
+        scanline: { "0%,100%": { top: "18%" }, "50%": { top: "80%" } },
       },
       animation: {
-        "fade-up": "fade-up 0.35s ease-out both",
-        "pulse-ring": "pulseRing 1.4s ease-out infinite",
+        breathe: "breathe 3s ease-in-out infinite",
+        wave: "wave 1.8s ease-in-out infinite",
+        "drift-z": "driftZ 2.6s ease-in-out infinite",
+        ring: "ring 2s ease-out infinite",
+        sparkle: "sparkle 1.6s ease-in-out infinite",
+        halo: "halo 1.6s ease-out infinite",
+        "float-up": "floatUp 0.6s cubic-bezier(.2,.7,.2,1) both",
+        "fade-up": "floatUp 0.34s cubic-bezier(.2,.7,.2,1) both",
+        pop: "popIn 0.42s cubic-bezier(.2,.8,.2,1) both",
+        scanline: "scanline 2.4s ease-in-out infinite",
       },
     },
   },

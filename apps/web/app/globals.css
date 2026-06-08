@@ -2,20 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-
 html,
 body {
   height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  background: radial-gradient(120% 80% at 50% -10%, #16202e 0%, #0b0e14 55%) fixed;
-  color: theme("colors.text");
+  font-family: var(--font-body), "Nunito Sans", system-ui, sans-serif;
+  color: #0b1020;
+  background: #fafcff;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
+}
+
+::selection {
+  background: rgba(127, 232, 255, 0.5);
+}
+
+.font-display {
+  font-family: var(--font-display), "Inter", system-ui, sans-serif;
 }
 
 /* App is a phone-sized column centered on larger screens. */
@@ -26,28 +35,79 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  background: radial-gradient(900px circle at 30% 0%, #ede9fe, #fafcff 55%);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* signature flourishes */
+.eyebrow {
+  font-family: var(--font-display), "Inter", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(11, 16, 32, 0.45);
+}
+.dashed-divider {
+  border-bottom: 1.5px dashed #c4b5fd;
+}
+
+/* press feedback used across pills, chips, cards */
+.press {
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+.press:active {
+  transform: scale(0.98);
+}
+
+/* wave needs a transform-origin Tailwind can't express on the keyframe */
+.anim-wave {
+  animation: wave 1.8s ease-in-out infinite;
+  transform-origin: 70% 70%;
 }
 
 @layer components {
+  /* ---- pill buttons ---- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl2 px-5 py-3.5 font-semibold transition active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100;
+    @apply press inline-flex select-none items-center justify-center gap-2 rounded-full font-display font-extrabold focus:outline-none focus-visible:ring-2 focus-visible:ring-violet2 focus-visible:ring-offset-2 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-gold text-ink shadow-glow hover:bg-gold-deep;
+    @apply btn bg-cyan px-6 py-3.5 text-[16px] text-ink shadow-glow hover:shadow-glowlg disabled:bg-hair disabled:text-white/90 disabled:shadow-none;
+  }
+  .btn-secondary {
+    @apply btn bg-white px-6 py-3.5 text-[16px] text-ink ring-[1.5px] ring-inset ring-ink/85 hover:bg-cream disabled:bg-hair disabled:text-white/90 disabled:ring-0;
+  }
+  .btn-violet {
+    @apply btn bg-violet2 px-6 py-3.5 text-[16px] text-white shadow-violetglow hover:bg-violet2-deep disabled:bg-hair disabled:text-white/90 disabled:shadow-none;
   }
   .btn-ghost {
-    @apply btn border border-line bg-surface-2 text-text hover:border-gold/40;
+    @apply btn bg-lilac/25 px-6 py-3.5 text-[16px] text-violet2-deep hover:bg-lilac/40 disabled:bg-hair disabled:text-white/90;
   }
+  .btn-danger {
+    @apply btn bg-white px-6 py-3.5 text-[16px] text-red-600 ring-[1.5px] ring-inset ring-red-200 hover:bg-red-50;
+  }
+
+  /* ---- surfaces ---- */
   .card {
-    @apply rounded-xl2 border border-line bg-surface p-5 shadow-card;
+    @apply rounded-card bg-white p-5 shadow-card;
   }
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3 py-1 text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 rounded-full bg-cyan/35 px-3 py-1 text-[12.5px] font-bold font-display text-ink;
   }
   .label {
-    @apply text-xs font-medium uppercase tracking-wide text-muted;
+    @apply eyebrow;
   }
   .field {
-    @apply w-full rounded-xl2 border border-line bg-surface-2 px-4 py-3.5 text-text placeholder:text-muted/70 outline-none focus:border-gold/50;
+    @apply w-full rounded-2xl border border-slate-200 bg-cream px-4 py-3 text-[15px] text-ink outline-none placeholder:text-muted focus:border-violet2/60 focus:ring-2 focus:ring-violet2/15;
   }
 }

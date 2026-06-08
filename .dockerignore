@@ -1,0 +1,21 @@
+# Keep the Docker build context small and secret-free.
+**/node_modules
+**/.next
+**/dist
+**/.expo
+**/build
+.git
+.github
+
+# NEVER ship secrets into an image — env comes from the host's env vars.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Stuff the relayer image doesn't need
+apps/web
+apps/mobile
+tools
+docs
+**/*.log
+**/.DS_Store
