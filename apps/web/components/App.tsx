@@ -315,6 +315,23 @@ export default function App() {
     }
   }
 
+  // import an existing private key (plain burner — not passkey-encrypted)
+  const onImportWallet = (pk: string) => {
+    try {
+      importWallet(pk)
+      const a = getAddress()
+      setAddress(a)
+      setLocked(false)
+      flash("Wallet imported")
+      if (a && navigator.onLine) {
+        fetchRelayerInfo().then(setRelayer)
+        refreshChain(a)
+      }
+    } catch (e) {
+      flash((e as Error).message || "Invalid private key")
+    }
+  }
+
   const submitText = (text: string) => {
     const actions = parsePlan(text)
     if (actions.length === 0) return flash("Couldn't parse that. Try: split 30 between A, B and C")
@@ -465,7 +482,7 @@ export default function App() {
 
   if (!ready) return <main className="app-shell items-center justify-center" />
   if (locked) return <UnlockScreen onUnlock={onUnlock} onReset={() => { clearWallet(); setAddress(null); setLocked(false) }} busy={busy} />
-  if (!address) return <Onboarding onCreate={onCreateWallet} busy={busy} />
+  if (!address) return <Onboarding onCreate={onCreateWallet} onImport={onImportWallet} busy={busy} />
 
   const isTab = screen === "home" || screen === "activity" || screen === "identity" || screen === "wallet"
   const flowTitle: Partial<Record<Screen, string>> = {
@@ -588,7 +605,44 @@ function backFrom(
 }
 
 // ---------------------------------------------------------------------------
-function Onboarding({ onCreate, busy }: { onCreate: () => void; busy: boolean }) {
+function Onboarding({ onCreate, onImport, busy }: { onCreate: () => void; onImport: (pk: string) => void; busy: boolean }) {
+  const [mode, setMode] = useState<"intro" | "import">("intro")
+  const [pk, setPk] = useState("")
+  const bg = "linear-gradient(180deg,#ffffff 0%,#f5f3ff 60%,#ede9fe 100%)"
+
+  if (mode === "import") {
+    return (
+      <main className="app-shell">
+        <div className="animate-float-up flex min-h-full flex-col px-6 pb-8 pt-6" style={{ background: bg }}>
+          <button onClick={() => setMode("intro")} className="press -ml-1 inline-flex w-fit items-center gap-1 font-display text-[14px] font-bold text-violet2-deep">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+            Back
+          </button>
+          <div className="flex flex-1 flex-col items-center justify-center text-center">
+            <KumoMascot state="cheerful" width={140} parens />
+            <h1 className="mt-5 font-display text-[26px] font-black tracking-[-0.02em] text-ink">Use an existing wallet</h1>
+            <p className="mt-2 max-w-[280px] text-[14px] font-semibold text-slate2">Paste your private key — it’s stored only on this device.</p>
+            <input
+              value={pk}
+              onChange={(e) => setPk(e.target.value)}
+              placeholder="0x… private key"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="field mt-6 w-full font-mono text-[13px]"
+            />
+          </div>
+          <div className="space-y-3 pt-7">
+            <PillButton size="block" disabled={!pk.trim()} onClick={() => onImport(pk.trim())} icon={<Download size={18} />}>
+              Import wallet
+            </PillButton>
+            <p className="px-4 text-center text-[12px] leading-relaxed text-muted">An imported key is kept in this browser (not passkey-encrypted). Only paste a key you control.</p>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   const rows = [
     { icon: <Face size={20} />, t: "Secured by you", s: "Unlocked with Face ID / fingerprint." },
     { icon: <Lock size={20} />, t: "Sign offline", s: "Your key never leaves this device." },
@@ -596,12 +650,9 @@ function Onboarding({ onCreate, busy }: { onCreate: () => void; busy: boolean })
   ]
   return (
     <main className="app-shell">
-      <div
-        className="animate-float-up flex min-h-full flex-col px-6 pb-8 pt-12"
-        style={{ background: "linear-gradient(180deg,#ffffff 0%,#f5f3ff 60%,#ede9fe 100%)" }}
-      >
+      <div className="animate-float-up flex min-h-full flex-col px-6 pb-8 pt-12" style={{ background: bg }}>
         <div className="flex flex-1 flex-col items-center justify-center text-center">
-          <KumoMascot state="waving" width={188} parens coin />
+          <KumoMascot state="waving" width={180} parens coin />
           <h1 className="mt-6 font-display text-[30px] font-black tracking-[-0.02em] text-ink">Welcome to Kumo</h1>
           <p className="mt-2 text-[16px] font-semibold text-slate2">Pay when the signal disappears.</p>
           <div className="mt-8 w-full space-y-2.5">
@@ -620,9 +671,10 @@ function Onboarding({ onCreate, busy }: { onCreate: () => void; busy: boolean })
           <PillButton size="block" disabled={busy} onClick={onCreate} icon={<Face size={18} />} iconRight={busy ? undefined : <Arrow size={18} />}>
             {busy ? "Creating…" : "Create my wallet"}
           </PillButton>
-          <p className="px-4 text-center text-[12px] leading-relaxed text-muted">
-            A non-custodial wallet is generated on this device and secured with your passkey (Face ID / fingerprint) where supported. You can import an existing key later in Wallet.
-          </p>
+          <button onClick={() => setMode("import")} disabled={busy} className="press w-full py-1.5 text-center font-display text-[14.5px] font-bold text-violet2-deep disabled:opacity-50">
+            Use an existing wallet
+          </button>
+          <p className="px-4 text-center text-[12px] leading-relaxed text-muted">A new wallet is generated on this device and secured with your passkey (Face ID / fingerprint) where supported.</p>
         </div>
       </div>
     </main>
