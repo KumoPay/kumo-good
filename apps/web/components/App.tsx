@@ -13,7 +13,7 @@ import {
   splitEvenly,
   toBaseUnits,
 } from "@kumo-good/shared"
-import { getAccount, getAddress, createWallet, clearWallet, importWallet, isLocked, unlock, revealKey } from "@/lib/wallet"
+import { getAccount, getAddress, createWallet, clearWallet, importWallet, isLocked, unlock, restore, canRestore, revealKey } from "@/lib/wallet"
 import { getBalance, getIdentity, getUbiEntitlement, getCurrentDay, claimUbi, type IdentityStatus } from "@/lib/gd"
 import { fetchRelayerInfo, getCachedRelayer, buildSignedPayment, buildSignedSplit, buildClaimEntry, settle, settleSplit, settleClaim, type RelayerInfo } from "@/lib/relay"
 import { readQueue, addToQueue, updateEntry, removeEntry, pending } from "@/lib/queue"
@@ -315,6 +315,25 @@ export default function App() {
     }
   }
 
+  // restore a passkey wallet on a new device / after clearing storage (Face ID → same key)
+  const onRestore = async () => {
+    setBusy(true)
+    try {
+      const addr = await restore()
+      setAddress(addr)
+      setLocked(false)
+      flash("Wallet restored 🔑")
+      if (navigator.onLine) {
+        fetchRelayerInfo().then(setRelayer)
+        refreshChain(addr)
+      }
+    } catch (e) {
+      flash((e as Error).message || "Restore failed — try again")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // import an existing private key (plain burner — not passkey-encrypted)
   const onImportWallet = (pk: string) => {
     try {
@@ -482,7 +501,7 @@ export default function App() {
 
   if (!ready) return <main className="app-shell items-center justify-center" />
   if (locked) return <UnlockScreen onUnlock={onUnlock} onReset={() => { clearWallet(); setAddress(null); setLocked(false) }} busy={busy} />
-  if (!address) return <Onboarding onCreate={onCreateWallet} onImport={onImportWallet} busy={busy} />
+  if (!address) return <Onboarding onCreate={onCreateWallet} onImport={onImportWallet} onRestore={onRestore} busy={busy} />
 
   const isTab = screen === "home" || screen === "activity" || screen === "identity" || screen === "wallet"
   const flowTitle: Partial<Record<Screen, string>> = {
@@ -605,9 +624,11 @@ function backFrom(
 }
 
 // ---------------------------------------------------------------------------
-function Onboarding({ onCreate, onImport, busy }: { onCreate: () => void; onImport: (pk: string) => void; busy: boolean }) {
+function Onboarding({ onCreate, onImport, onRestore, busy }: { onCreate: () => void; onImport: (pk: string) => void; onRestore: () => void; busy: boolean }) {
   const [mode, setMode] = useState<"intro" | "import">("intro")
   const [pk, setPk] = useState("")
+  const [restorable, setRestorable] = useState(false)
+  useEffect(() => setRestorable(canRestore()), [])
   const bg = "linear-gradient(180deg,#ffffff 0%,#f5f3ff 60%,#ede9fe 100%)"
 
   if (mode === "import") {
@@ -671,10 +692,20 @@ function Onboarding({ onCreate, onImport, busy }: { onCreate: () => void; onImpo
           <PillButton size="block" disabled={busy} onClick={onCreate} icon={<Face size={18} />} iconRight={busy ? undefined : <Arrow size={18} />}>
             {busy ? "Creating…" : "Create my wallet"}
           </PillButton>
-          <button onClick={() => setMode("import")} disabled={busy} className="press w-full py-1.5 text-center font-display text-[14.5px] font-bold text-violet2-deep disabled:opacity-50">
-            Use an existing wallet
-          </button>
-          <p className="px-4 text-center text-[12px] leading-relaxed text-muted">A new wallet is generated on this device and secured with your passkey (Face ID / fingerprint) where supported.</p>
+          <div className="flex items-center justify-center gap-4">
+            {restorable && (
+              <button onClick={onRestore} disabled={busy} className="press py-1.5 font-display text-[14.5px] font-bold text-violet2-deep disabled:opacity-50">
+                Restore with passkey
+              </button>
+            )}
+            {restorable && <span className="h-3 w-px bg-hair" />}
+            <button onClick={() => setMode("import")} disabled={busy} className="press py-1.5 font-display text-[14.5px] font-bold text-violet2-deep disabled:opacity-50">
+              Use an existing key
+            </button>
+          </div>
+          <p className="px-4 text-center text-[12px] leading-relaxed text-muted">
+            A new wallet is generated and secured with your passkey (Face ID / fingerprint). The same passkey restores it on your other devices.
+          </p>
         </div>
       </div>
     </main>
