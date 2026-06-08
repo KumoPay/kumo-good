@@ -6,7 +6,7 @@ import { Wifi, WifiOff } from "@/components/Icons"
 const CLOUD_PATH =
   "M46 138 C24 138 18 110 40 104 C30 78 66 68 80 86 C86 58 132 56 142 84 C158 70 190 80 184 106 C206 110 202 138 180 138 Z"
 
-export type MascotState = "cheerful" | "waving" | "signal" | "sleeping" | "celebrating" | "offline"
+export type MascotState = "cheerful" | "waving" | "signal" | "sleeping" | "celebrating" | "offline" | "wallet"
 
 // Each state maps to a brand illustration. The art already bakes in its own
 // decoration (signal waves, sleep z's on a cloud, excitement, the red no-signal
@@ -18,6 +18,7 @@ const MASCOT_SRC: Record<MascotState, string> = {
   celebrating: "/brand/state-03.png", // excited, open-mouth grin
   sleeping: "/brand/state-02.png", // dozing on a cloud with z z z
   offline: "/brand/kumo-offline-mascot.png", // worried + red no-signal
+  wallet: "/kumo-states/state-00.png", // onboarding — Kumo with shield
 }
 
 /** The Kumo pet — the brand's real mascot illustration, by expression state. */
@@ -118,10 +119,10 @@ export function PillButton({
   ariaLabel?: string
 }) {
   const sizes = {
-    sm: "text-[13px] px-4 py-2",
-    md: "text-[15px] px-5 py-2.5",
-    lg: "text-[16px] px-6 py-3.5",
-    block: "text-[16px] px-6 py-3.5 w-full",
+    sm: "text-[13px] px-4 py-2.5 min-h-[44px]",
+    md: "text-[15px] px-5 py-2.5 min-h-[44px]",
+    lg: "text-[16px] px-6 py-3.5 min-h-[48px]",
+    block: "text-[16px] px-6 py-3.5 min-h-[48px] w-full",
   }
   const variants = {
     primary: "bg-cyan text-ink shadow-glow hover:shadow-glowlg",
@@ -250,8 +251,8 @@ export function OnlineChip({ online, onClick, asButton = true }: { online: boole
       <WifiOff size={14} /> Offline
     </>
   )
-  const cls = `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold font-display press
-    ${online ? "bg-cyan/40 text-ink" : "bg-lilac/50 text-violet2-deep"}`
+  const cls = `inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold font-display press
+    ${online ? "bg-[#E8F4FF] text-[#3B6FE0]" : "bg-lilac/50 text-violet2-deep"}`
   if (asButton && onClick)
     return (
       <button onClick={onClick} className={cls} aria-label={`Network: ${online ? "online" : "offline"}.`}>
@@ -262,9 +263,9 @@ export function OnlineChip({ online, onClick, asButton = true }: { online: boole
 }
 
 /** G$ amount display — number in ink, "G$" in green. */
-export function GAmount({ value, size = "text-3xl", className = "" }: { value: React.ReactNode; size?: string; className?: string }) {
+export function GAmount({ value, size = "text-[clamp(28px,9vw,36px)]", className = "" }: { value: React.ReactNode; size?: string; className?: string }) {
   return (
-    <span className={`inline-flex items-baseline gap-1.5 font-display font-black tracking-tight ${size} ${className}`}>
+    <span className={`inline-flex max-w-full items-baseline gap-1.5 font-display font-black tracking-tight ${size} ${className}`}>
       {value}
       <span className="font-extrabold text-gpos" style={{ fontSize: "0.62em" }}>
         G$

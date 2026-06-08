@@ -108,6 +108,13 @@ export const CheckCircle = (p: P) => (
     <path d="M8 12.3 11 15l5-6" />
   </Ic>
 )
+export const Info = (p: P) => (
+  <Ic {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5" />
+    <circle cx="12" cy="8" r="0.75" fill="currentColor" stroke="none" />
+  </Ic>
+)
 export const Copy = (p: P) => (
   <Ic {...p}>
     <rect x="9" y="9" width="11" height="11" rx="2.5" />
@@ -264,11 +271,30 @@ export const Send = (p: P) => (
     <path d="M22 2 11 13" />
   </Ic>
 )
+export const Bell = (p: P) => (
+  <Ic {...p}>
+    <path d="M18 16H6l-1.2-2.4A4.5 4.5 0 0 1 7 9.2V7.5a5 5 0 0 1 10 0V9.2a4.5 4.5 0 0 1 2.2 4.4L18 16Z" />
+    <path d="M10 18.5a2 2 0 0 0 4 0" />
+  </Ic>
+)
+export const Users = (p: P) => (
+  <Ic {...p}>
+    <circle cx="9" cy="8.5" r="3" />
+    <path d="M3.5 19.5a5.5 5.5 0 0 1 11 0" />
+    <circle cx="17" cy="9" r="2.5" />
+    <path d="M14.5 19.5a4.5 4.5 0 0 1 6.5-4" />
+  </Ic>
+)
 export const Gift = (p: P) => (
   <Ic {...p}>
     <rect x="3" y="8" width="18" height="4" rx="1" />
     <path d="M12 8v13M4 12v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8" />
     <path d="M12 8S10 3 7.5 4.5 9 8 12 8s2.5-4-1-3.5S12 8 12 8Z" />
+  </Ic>
+)
+export const Message = (p: P) => (
+  <Ic {...p}>
+    <path d="M6 8a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3H10l-4 3V8Z" />
   </Ic>
 )
 

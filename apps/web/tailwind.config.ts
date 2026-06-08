@@ -6,6 +6,9 @@ const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      screens: {
+        xs: "375px",
+      },
       colors: {
         ink: "#0B1020",
         slate2: "#64748b",
@@ -46,6 +49,14 @@ const config: Config = {
         floatUp: { from: { opacity: "0", transform: "translateY(18px)" }, to: { opacity: "1", transform: "translateY(0)" } },
         popIn: { "0%": { transform: "scale(0.92)", opacity: "0" }, "100%": { transform: "scale(1)", opacity: "1" } },
         scanline: { "0%,100%": { top: "18%" }, "50%": { top: "80%" } },
+        qrPulse: { "0%,100%": { opacity: "0.18" }, "50%": { opacity: "0.95" } },
+        qrBar: { "0%": { transform: "translateX(-120%)" }, "100%": { transform: "translateX(420%)" } },
+        qrGlow: { "0%,100%": { opacity: "0.4" }, "50%": { opacity: "1" } },
+        floatSlow: { "0%,100%": { transform: "translateY(0)" }, "50%": { transform: "translateY(-16px)" } },
+        blobDrift: { "0%,100%": { transform: "translate(0,0) scale(1)" }, "33%": { transform: "translate(12px,-18px) scale(1.04)" }, "66%": { transform: "translate(-8px,10px) scale(0.98)" } },
+        revealUp: { from: { opacity: "0", transform: "translateY(28px)" }, to: { opacity: "1", transform: "translateY(0)" } },
+        pulseGlow: { "0%,100%": { boxShadow: "0 0 20px rgba(127,232,255,0.25)" }, "50%": { boxShadow: "0 0 36px rgba(127,232,255,0.45)" } },
+        signalWave: { "0%": { transform: "scale(0.85)", opacity: "0.55" }, "100%": { transform: "scale(1.35)", opacity: "0" } },
       },
       animation: {
         breathe: "breathe 3s ease-in-out infinite",
@@ -58,6 +69,14 @@ const config: Config = {
         "fade-up": "floatUp 0.34s cubic-bezier(.2,.7,.2,1) both",
         pop: "popIn 0.42s cubic-bezier(.2,.8,.2,1) both",
         scanline: "scanline 2.4s ease-in-out infinite",
+        "qr-pulse": "qrPulse 1.4s ease-in-out infinite",
+        "qr-bar": "qrBar 1.6s ease-in-out infinite",
+        "qr-glow": "qrGlow 2s ease-in-out infinite",
+        "float-slow": "floatSlow 4.5s ease-in-out infinite",
+        "blob-drift": "blobDrift 14s ease-in-out infinite",
+        reveal: "revealUp 0.7s cubic-bezier(.2,.7,.2,1) both",
+        "pulse-glow": "pulseGlow 3s ease-in-out infinite",
+        "signal-wave": "signalWave 2.4s ease-out infinite",
       },
     },
   },
