@@ -46,5 +46,6 @@ export async function claimUbi(account: PrivateKeyAccount): Promise<{ ok: boolea
   }
 }
 
-/** Where users complete GoodDollar face verification (no native/embeddable SDK path). */
-export const VERIFY_URL = "https://goodapp.gooddollar.org"
+/** Where users complete GoodDollar face verification (live host; the old
+ *  goodapp.gooddollar.org is dead). The in-app flow uses startFaceVerification. */
+export const VERIFY_URL = "https://goodid.gooddollar.org"
