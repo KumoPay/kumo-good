@@ -75,7 +75,9 @@ import {
   Split,
   List,
   Bolt,
+  ChevR,
   Link as LinkIcon,
+  Users,
   Globe,
   Face,
   CheckCircle,
@@ -83,6 +85,13 @@ import {
   Lock,
   Download,
   Trash,
+  Info,
+  Bell,
+  Gift,
+  Message,
+  Send,
+  User,
+  Sparkle,
 } from "@/components/Icons"
 
 type Screen = "home" | "pay" | "sign" | "settled" | "activity" | "identity" | "wallet" | "scan" | "request" | "plan" | "split"
@@ -516,7 +525,7 @@ export default function App() {
   return (
     <main className="app-shell relative">
       {isTab ? (
-        <TopBar online={online} relayer={relayer} streak={streak} onToggle={undefined} />
+        <TopBar />
       ) : screen !== "settled" ? (
         <FlowHeader title={flowTitle[screen] ?? ""} onBack={() => backFrom(screen, setScreen, setPlan, setSplitDraft)} right={<OnlineChip online={online} asButton={false} />} />
       ) : null}
@@ -597,7 +606,18 @@ export default function App() {
         )}
       </div>
 
-      {isTab && <TabBar screen={screen} setScreen={setScreen} queueCount={pending(queue).length} />}
+      {isTab && (
+        <TabBar
+          screen={screen}
+          setScreen={setScreen}
+          queueCount={pending(queue).length}
+          onPay={() => {
+            setIntent(null)
+            setRecipientInput("")
+            setScreen("pay")
+          }}
+        />
+      )}
       {toast && <Toast message={toast} />}
     </main>
   )
@@ -622,6 +642,14 @@ function backFrom(
   }
   setScreen("home")
 }
+
+// ---------------------------------------------------------------------------
+const ONBOARDING_MASCOT = "/kumo-states/state-00-transparent.png"
+const LOGO_SUPERIOR = "/kumo-states/logo-superior.png"
+const NAV_KUMO_MARK = "/kumo-states/nav-kumo.png"
+const PROFILE_MASCOT = "/kumo-states/state-00-signal-transparent.png"
+const SCAN_KUMO = "/kumo-states/scan-kumo.png"
+const STREAK_FLAME = "/kumo-states/streak-flame.png"
 
 // ---------------------------------------------------------------------------
 function Onboarding({ onCreate, onImport, onRestore, busy }: { onCreate: () => void; onImport: (pk: string) => void; onRestore: () => void; busy: boolean }) {
@@ -736,35 +764,33 @@ function UnlockScreen({ onUnlock, onReset, busy }: { onUnlock: () => void; onRes
   )
 }
 
-function TopBar({ online, relayer, streak, onToggle }: { online: boolean; relayer: RelayerInfo | null; streak: Streak; onToggle?: () => void }) {
+function TopBar() {
   return (
-    <div className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-100 bg-white/85 px-4 backdrop-blur">
-      <div className="flex items-center gap-2">
-        <KumoMark size={32} />
-        <span className="font-display text-[16px] font-extrabold tracking-tight">Kumo</span>
-      </div>
-      <div className="flex items-center gap-2">
-        {streak.count > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 font-display text-[12px] font-bold text-amber-700">
-            <Flame size={13} /> {streak.count}
-          </span>
-        )}
-        <OnlineChip online={online} onClick={onToggle} asButton={!!onToggle} />
-      </div>
+    <div className="safe-top sticky top-0 z-20 flex min-h-[60px] items-center justify-between bg-white px-5 py-2">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={LOGO_SUPERIOR}
+        alt="kumo·good"
+        className="h-[52px] w-auto max-w-[min(78vw,240px)] object-contain object-left"
+        draggable={false}
+      />
+      <button type="button" aria-label="Notifications" className="press grid h-10 w-10 place-items-center rounded-full text-[#3D4F6E]">
+        <Bell size={23} stroke={1.7} />
+      </button>
     </div>
   )
 }
 
 function FlowHeader({ title, onBack, right }: { title: string; onBack: () => void; right?: React.ReactNode }) {
   return (
-    <div className="sticky top-0 z-20 flex h-14 items-center justify-between gap-2 border-b border-slate-100 bg-white/90 px-3 backdrop-blur">
-      <button onClick={onBack} aria-label="Back" className="press grid h-9 w-9 place-items-center rounded-full text-ink hover:bg-slate-100">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <div className="safe-top sticky top-0 z-20 flex min-h-14 items-center justify-between gap-2 bg-white/80 px-4 backdrop-blur-sm">
+      <button onClick={onBack} aria-label="Back" className="press grid h-10 w-10 place-items-center rounded-xl border border-[#E2E8F0] bg-white text-[#0B1020] shadow-sm">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
           <path d="M15 6l-6 6 6 6" />
         </svg>
       </button>
-      <span className="font-display text-[16px] font-extrabold text-ink">{title}</span>
-      <div className="flex w-9 justify-end">{right}</div>
+      <span className="font-display text-[17px] font-bold text-[#0B1020]">{title}</span>
+      <div className="flex min-w-10 justify-end">{right}</div>
     </div>
   )
 }
@@ -783,113 +809,164 @@ function HomeScreen(props: {
   onRequest: () => void
   onActivity: () => void
 }) {
-  const { balance, portfolio, identity, ubi, queue, onPay, onClaim, onRequest, onActivity, busy, online, streak } = props
+  const { balance, identity, ubi, queue, onPay, onClaim, onRequest, onActivity, busy, online, streak } = props
   const pend = pending(queue)
   const canClaim = ubi != null && ubi > 0n
+  const verified = !!identity?.isWhitelisted
+  const recent = [...queue].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3)
+
+  const streakCount = streak.count > 0 ? streak.count : streak.best > 0 ? streak.best : 0
+
   return (
-    <div className="animate-float-up space-y-4 pt-4">
-      {/* greeting + state-reactive mascot */}
-      <div className="flex items-center gap-3 px-1">
-        <KumoMascot state={online ? "signal" : "offline"} width={56} float={false} />
-        <div>
-          <div className="font-display text-[17px] font-extrabold leading-tight text-ink">Hi there 👋</div>
-          <div className="text-[12.5px] font-semibold" style={{ color: online ? "#16a34a" : "#7c5cff" }}>
-            {online ? "Online · everything settles itself" : "Offline · I’ll queue your payments"}
-          </div>
-        </div>
-      </div>
-
-      {/* balance card */}
-      <Card className="relative overflow-hidden !p-0">
-        <div className="absolute -right-8 -top-10 opacity-20">
-          <CloudMark size={130} color="#C7B5FF" />
-        </div>
-        <div className="relative p-5">
-          <div className="flex items-center justify-between">
-            <Eyebrow>Your balance</Eyebrow>
-            {identity?.isWhitelisted ? (
-              <Chip tone="green" icon={<CheckCircle size={14} />}>
-                Verified human
-              </Chip>
-            ) : (
-              <Chip tone="slate" icon={<Shield size={14} />}>
-                Not verified
-              </Chip>
-            )}
-          </div>
-          <div className="mt-2 flex items-end justify-between">
-            <GAmount value={balance == null ? "—" : fmtG(balance)} size="text-[42px]" />
-            {streak.count > 0 && (
-              <Chip tone="amber" icon={<Flame size={14} />}>
-                {streak.count}
-              </Chip>
-            )}
-          </div>
-          {!online && pend.length > 0 && (
-            <button onClick={onActivity} className="press mt-4 flex w-full items-center gap-2.5 rounded-xl bg-lilac/25 px-3.5 py-2.5 text-left">
-              <WifiOff size={18} className="shrink-0 text-violet2-deep" />
-              <span className="flex-1 text-[13px] font-semibold text-violet2-deep">{pend.length} queued · settles when you reconnect</span>
-              <Arrow size={16} className="shrink-0 text-violet2-deep" />
-            </button>
-          )}
-        </div>
-      </Card>
-
-      {/* primary actions */}
-      <div className="grid grid-cols-2 gap-3">
-        <button onClick={onPay} className="press flex flex-col items-start gap-6 rounded-card bg-cyan p-4 text-ink shadow-glow">
-          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/55">
-            <ArrowUp size={22} />
-          </span>
-          <span className="font-display text-[17px] font-extrabold">Pay</span>
-        </button>
-        <button
-          onClick={onClaim}
-          disabled={busy || !canClaim}
-          className="press flex flex-col items-start gap-6 rounded-card bg-gradient-to-br from-violet2 to-violet2-soft p-4 text-white shadow-violetglow disabled:opacity-60"
-        >
-          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/20">
-            <Coin size={22} />
-          </span>
-          <span className="font-display text-[17px] font-extrabold leading-tight">
-            {canClaim ? (
-              <>
-                Claim {fmtG(ubi!)} G$
-                <br />
-                <span className="text-[12px] font-bold text-white/75">Today’s UBI</span>
-              </>
-            ) : (
-              <>
-                UBI claimed
-                <br />
-                <span className="text-[12px] font-bold text-white/75">Come back tomorrow</span>
-              </>
-            )}
-          </span>
-        </button>
-      </div>
-
-      <button
-        onClick={onRequest}
-        className="press flex w-full items-center justify-center gap-2.5 rounded-card bg-white p-4 font-display text-[15px] font-extrabold text-ink shadow-card ring-[1.5px] ring-inset ring-ink/85"
+    <div className="animate-float-up space-y-3.5 pb-2 pt-1">
+      {/* balance hero card */}
+      <div
+        className="relative min-h-[152px] overflow-hidden rounded-[24px] px-5 pb-6 pt-5 shadow-[0_8px_24px_rgba(124,92,255,0.08)]"
+        style={{ background: "linear-gradient(120deg, #EDE9FE 0%, #E6F3FC 48%, #D6EAFE 100%)" }}
       >
-        <QrCode size={20} /> Request money (QR)
-      </button>
-
-      {/* portfolio */}
-      <div>
-        <div className="mb-2 px-1">
-          <Eyebrow>Portfolio</Eyebrow>
+        <div className="relative z-10 max-w-[62%]">
+          <p className="font-display text-[13px] font-medium text-[#5B6E8C]">Total balance</p>
+          <p className="mt-1 font-display text-[clamp(32px,9.5vw,42px)] font-bold leading-none tracking-[-0.02em] text-[#0B1020]">
+            G$ {balance == null ? "—" : fmtG(balance)}
+          </p>
+          <p className="mt-1.5 font-display text-[14px] font-medium text-[#5B6E8C]">GoodDollar</p>
         </div>
-        {portfolio.length === 0 ? (
-          <Card className="text-sm text-slate2">{online ? "Loading your tokens…" : "Reconnect to load your tokens."}</Card>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={NAV_KUMO_MARK}
+          alt=""
+          width={130}
+          height={130}
+          className="pointer-events-none absolute -bottom-12 -right-1 h-[132px] w-[132px] object-contain"
+          draggable={false}
+        />
+      </div>
+
+      {/* status pills */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex items-center justify-center gap-2 rounded-full bg-[#E8F8EF] px-4 py-2.5 font-display text-[13px] font-semibold text-[#16A34A]">
+          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${online ? "bg-emerald-500" : "bg-slate-400"}`} />
+          {online ? "Online" : "Offline"}
+        </div>
+        <div className={`flex items-center justify-center gap-2 rounded-full px-4 py-2.5 font-display text-[13px] font-semibold ${verified ? "bg-[#E8F2FF] text-[#3B6FE0]" : "bg-slate-100 text-slate2"}`}>
+          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-white ${verified ? "bg-[#3B6FE0]" : "bg-slate-400"}`}>
+            <Check size={11} stroke={2.8} />
+          </span>
+          {verified ? "Verified" : "Not verified"}
+        </div>
+      </div>
+
+      {/* streak */}
+      <div
+        className="flex items-center gap-3 rounded-[18px] px-4 py-3.5"
+        style={{ background: "linear-gradient(90deg, #FFF6EE 0%, #FFF0E4 50%, #FFF6EE 100%)" }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={STREAK_FLAME} alt="" className="h-6 w-6 shrink-0 object-contain" draggable={false} />
+        <div className="min-w-0 flex-1 text-center">
+          <div className="font-display text-[15px] font-bold text-[#0B1020]">
+            {streakCount > 0 ? `${streakCount} day streak` : "Start your streak"}
+          </div>
+          <div className="text-[12.5px] font-medium text-[#9AA5B8]">Keep it going!</div>
+        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={STREAK_FLAME} alt="" className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_2px_8px_rgba(255,120,40,0.35)]" draggable={false} />
+      </div>
+
+      {!online && pend.length > 0 && (
+        <button onClick={onActivity} className="press flex w-full items-center gap-2.5 rounded-[16px] bg-lilac/20 px-3.5 py-3 text-left">
+          <WifiOff size={18} className="shrink-0 text-violet2-deep" />
+          <span className="flex-1 text-[13px] font-semibold text-violet2-deep">{pend.length} queued · settles when you reconnect</span>
+          <Arrow size={16} className="shrink-0 text-violet2-deep" />
+        </button>
+      )}
+
+      {/* actions */}
+      <div className="pt-1">
+        <h2 className="font-display text-[18px] font-bold text-[#0B1020]">What would you like to do?</h2>
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          <button onClick={onPay} className="press flex flex-col items-center gap-3 rounded-[18px] bg-white px-2 py-5 shadow-[0_4px_16px_rgba(11,16,32,0.06)]">
+            <span className="grid h-11 w-11 place-items-center text-[#7C5CFF]">
+              <Send size={24} stroke={1.85} />
+            </span>
+            <span className="font-display text-[13px] font-bold text-[#0B1020]">Pay</span>
+          </button>
+          <button
+            onClick={onClaim}
+            disabled={busy || !canClaim}
+            className="press flex flex-col items-center gap-3 rounded-[18px] bg-white px-2 py-5 shadow-[0_4px_16px_rgba(11,16,32,0.06)] disabled:opacity-55"
+          >
+            <span className="grid h-11 w-11 place-items-center text-[#EAB308]">
+              <Gift size={24} stroke={1.85} />
+            </span>
+            <span className="text-center font-display text-[13px] font-bold leading-tight text-[#0B1020]">Claim UBI</span>
+          </button>
+          <button onClick={onRequest} className="press flex flex-col items-center gap-3 rounded-[18px] bg-white px-2 py-5 shadow-[0_4px_16px_rgba(11,16,32,0.06)]">
+            <span className="grid h-11 w-11 place-items-center text-[#7C5CFF]">
+              <QrCode size={24} stroke={1.85} />
+            </span>
+            <span className="font-display text-[13px] font-bold text-[#0B1020]">Request</span>
+          </button>
+        </div>
+      </div>
+
+      {/* recent activity */}
+      <div className="pt-1">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-display text-[18px] font-bold text-[#0B1020]">Recent activity</h2>
+          <button type="button" onClick={onActivity} className="press font-display text-[13px] font-semibold text-[#7C5CFF]">
+            View all
+          </button>
+        </div>
+        {recent.length === 0 ? (
+          <div className="rounded-[18px] bg-white px-4 py-5 text-center text-[13px] font-medium text-[#9AA5B8] shadow-[0_4px_16px_rgba(11,16,32,0.06)]">
+            No activity yet — pay or claim to get started.
+          </div>
         ) : (
-          <Card className="!p-2">
-            {portfolio.map((t, i) => (
-              <TokenRow key={t.symbol} t={t} last={i === portfolio.length - 1} />
+          <div className="overflow-hidden rounded-[18px] bg-white shadow-[0_4px_16px_rgba(11,16,32,0.06)]">
+            {recent.map((e, i) => (
+              <HomeActivityRow key={e.id} entry={e} last={i === recent.length - 1} />
             ))}
-          </Card>
+          </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function HomeActivityRow({ entry, last }: { entry: QueuedItem; last?: boolean }) {
+  const isClaim = entry.kind === "claim"
+  const isPayment = entry.kind === "payment"
+  const name = isPayment
+    ? (isAddress(entry.intent.recipient) ? shortAddr(entry.intent.recipient) : entry.intent.recipient)
+    : isClaim
+      ? "UBI"
+      : itemLabel(entry)
+  const amount =
+    entry.kind === "payment"
+      ? entry.intent.amount
+      : entry.kind === "split"
+        ? entry.split.total
+        : entry.kind === "claim"
+          ? "UBI"
+          : "—"
+  const incoming = isClaim
+  const subtitle = isClaim ? "Claimed" : isPayment ? "You sent" : "Split payment"
+  const displayName = name.length > 18 ? shortAddr(name as string) : name
+  return (
+    <div className={`flex items-center gap-3.5 px-4 py-4 ${last ? "" : "border-b border-slate-100/80"}`}>
+      <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-[#E8E0FF] to-[#D6EAFE] font-display text-[16px] font-bold text-[#7C5CFF]">
+        {displayName[0]?.toUpperCase() ?? "?"}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-display text-[15px] font-bold text-[#0B1020]">{displayName}</div>
+        <div className="truncate text-[13px] font-medium text-[#9AA5B8]">{subtitle}</div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div className={`font-display text-[15px] font-bold ${incoming || entry.status === "settled" ? "text-[#16A34A]" : "text-[#0B1020]"}`}>
+          {incoming ? "+" : ""} G$ {amount}
+        </div>
+        <div className="text-[12px] font-medium text-[#9AA5B8]">{relTime(entry.createdAt)}</div>
       </div>
     </div>
   )
@@ -942,7 +1019,7 @@ function ActivityRow({ e, last, compact, onRemove }: { e: QueuedItem; last?: boo
                 </a>
               )}
               {onRemove && (e.status === "settled" || e.status === "failed" || e.status === "expired") && (
-                <button className="text-[11px] font-semibold text-muted" onClick={() => onRemove(e.id)}>
+                <button className="press min-h-[44px] px-2 py-2 text-[12px] font-semibold text-muted" onClick={() => onRemove(e.id)}>
                   clear
                 </button>
               )}
@@ -988,6 +1065,16 @@ function TokenMark({ symbol }: { symbol: string }) {
 }
 
 type VoiceState = "idle" | "listening" | "recording" | "transcribing"
+
+function PaySoundWaves({ active }: { active?: boolean }) {
+  return (
+    <svg width="22" height="36" viewBox="0 0 22 36" aria-hidden="true" className={`shrink-0 ${active ? "text-[#7FE8FF]" : "text-[#B7F1FF]"}`}>
+      <path d="M2 10c4 4 4 12 0 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M8 6c6 6 6 18 0 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" opacity="0.85" />
+    </svg>
+  )
+}
+
 function PayScreen({ onSubmit, onScan, flash, selfAddr }: { onSubmit: (t: string) => void; onScan: () => void; flash: (m: string) => void; selfAddr: Hex }) {
   const [text, setText] = useState("")
   const [vstate, setVstate] = useState<VoiceState>("idle")
@@ -1063,57 +1150,101 @@ function PayScreen({ onSubmit, onScan, flash, selfAddr }: { onSubmit: (t: string
     { label: "split 30 three ways", fill: "split 30 between Ama, Kofi and Esi" },
   ]
   return (
-    <div className="animate-float-up flex min-h-full flex-col pt-2">
+    <div
+      className="animate-float-up relative flex min-h-full flex-col pb-2 pt-1"
+      style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FBFAFF 45%, #F7F4FF 100%)" }}
+    >
+      <Sparkle size={16} className="pointer-events-none absolute left-6 top-16 text-[#D8CCFF] opacity-80" />
+      <Sparkle size={12} className="pointer-events-none absolute right-10 top-28 text-[#C7B5FF] opacity-70" />
+      <Sparkle size={14} className="pointer-events-none absolute left-10 top-[42%] text-[#E0D4FF] opacity-60" />
+
       <div className="text-center">
-        <Eyebrow className="justify-center">Pay or claim</Eyebrow>
-        <h2 className="mt-1 font-display text-[22px] font-black text-ink">Say what you want to do</h2>
+        <p className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-[#A78BFA]">Pay or claim</p>
+        <h2 className="mt-2 font-display text-[24px] font-bold leading-tight text-[#0B1020]">Say what you want to do</h2>
       </div>
 
       {/* mic */}
-      <div className="my-7 grid place-items-center">
-        <div className="relative grid h-[132px] w-[132px] place-items-center">
-          {micActive && (
-            <>
-              <span className="absolute inset-0 rounded-full bg-lilac/40 animate-halo" />
-              <span className="absolute inset-0 rounded-full bg-lilac/30 animate-halo" style={{ animationDelay: "0.5s" }} />
-            </>
-          )}
-          <button
-            onClick={toggleVoice}
-            disabled={vstate === "transcribing"}
-            aria-label={micActive ? "Stop" : "Start voice input"}
-            className={`press relative grid h-[104px] w-[104px] place-items-center rounded-full text-white shadow-violetglow disabled:opacity-70 ${micActive ? "bg-violet2-deep" : "bg-violet2"}`}
-          >
-            <Mic size={40} />
-          </button>
+      <div className="relative my-8 flex flex-col items-center">
+        <div className="flex items-center gap-5">
+          <PaySoundWaves active={micActive} />
+          <div className="relative grid h-[128px] w-[128px] place-items-center">
+            <span className="absolute inset-0 rounded-full bg-[#C7B5FF]/25 blur-md" />
+            <span className="absolute inset-[6px] rounded-full ring-2 ring-white/80" />
+            {micActive && (
+              <>
+                <span className="absolute inset-0 rounded-full bg-violet2/20 animate-halo" />
+                <span className="absolute inset-0 rounded-full bg-lilac/30 animate-halo" style={{ animationDelay: "0.5s" }} />
+              </>
+            )}
+            <button
+              onClick={toggleVoice}
+              disabled={vstate === "transcribing"}
+              aria-label={micActive ? "Stop" : "Start voice input"}
+              className="press relative grid h-[96px] w-[96px] place-items-center rounded-full text-white shadow-[0_12px_32px_rgba(124,92,255,0.45)] disabled:opacity-70"
+              style={{ background: micActive ? "linear-gradient(145deg, #6D28D9 0%, #7C5CFF 100%)" : "linear-gradient(145deg, #7C5CFF 0%, #8B5CF6 100%)" }}
+            >
+              <Mic size={38} />
+            </button>
+          </div>
+          <PaySoundWaves active={micActive} />
         </div>
-        <p className="mt-3 h-5 font-display text-[13px] font-bold" style={{ color: micActive || vstate === "transcribing" ? "#6d28d9" : "#94a3b8" }}>
-          {micLabel}
+        <p className="mt-5 font-display text-[15px] font-semibold text-[#7C5CFF]">{micLabel}</p>
+        <p className="mt-1 max-w-[260px] text-center text-[12px] font-medium text-[#9AA5B8]">
+          {offlineVoice ? "On-device · works offline" : "Voice uses the network · enable offline voice in Wallet"}
         </p>
-        <p className="mt-0.5 text-[11px] font-semibold text-muted">{offlineVoice ? "On-device · works offline" : "Voice uses the network · enable offline voice in Wallet"}</p>
       </div>
 
-      <Field textarea rows={3} value={text} onChange={setText} placeholder="send 5 to 0x… for lunch — or — claim my UBI and send 2 to mom" />
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {chips.map((c) => (
-          <button
-            key={c.label}
-            onClick={() => setText(c.fill)}
-            className="press rounded-full bg-cyan/30 px-3 py-1.5 font-display text-[12.5px] font-bold text-ink hover:bg-cyan/45"
-          >
-            {c.label}
-          </button>
-        ))}
+      {/* command input */}
+      <div className="rounded-[22px] border border-[#E8E4F8] bg-white px-4 py-4 shadow-[0_4px_24px_rgba(124,92,255,0.07)] transition-[border-color,box-shadow] focus-within:border-[#C7B5FF] focus-within:shadow-[0_6px_28px_rgba(124,92,255,0.14)]">
+        <textarea
+          id="pay-command"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={3}
+          placeholder="What do you want to do?"
+          className="min-h-[92px] w-full resize-none border-0 bg-transparent font-display text-[16px] leading-[1.6] text-[#0B1020] placeholder:font-medium placeholder:text-[#B8C0D0] focus:outline-none"
+          aria-label="Payment command"
+        />
       </div>
 
-      <div className="mt-auto grid grid-cols-[auto_1fr] gap-3 pt-7">
-        <PillButton variant="secondary" size="lg" onClick={onScan} icon={<Scan size={18} />}>
+      <div className="mt-5">
+        <p className="mb-2.5 px-0.5 font-display text-[11px] font-bold uppercase tracking-[0.14em] text-[#A78BFA]">Quick ideas</p>
+        <div className="flex flex-wrap gap-2">
+          {chips.map((c) => (
+            <button
+              key={c.label}
+              type="button"
+              onClick={() => setText(c.fill)}
+              className={`press min-h-[40px] rounded-full px-4 py-2 font-display text-[12.5px] font-semibold transition-colors ${
+                text === c.fill
+                  ? "bg-[#7C5CFF] text-white shadow-[0_4px_14px_rgba(124,92,255,0.3)]"
+                  : "border border-[#E0D9FF] bg-white text-[#5B6478] hover:border-[#C7B5FF]/60"
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-auto grid grid-cols-2 gap-3 pt-6">
+        <button
+          type="button"
+          onClick={onScan}
+          className="press flex h-[52px] items-center justify-center gap-2 rounded-full border border-[#0B1020]/85 bg-white font-display text-[15px] font-bold text-[#0B1020]"
+        >
+          <Scan size={18} />
           Scan QR
-        </PillButton>
-        <PillButton size="lg" disabled={!text.trim()} onClick={() => onSubmit(text)} iconRight={<Arrow size={18} />}>
+        </button>
+        <button
+          type="button"
+          disabled={!text.trim()}
+          onClick={() => onSubmit(text)}
+          className="press flex h-[52px] items-center justify-center gap-2 rounded-full bg-[#C7B5FF] font-display text-[15px] font-bold text-white shadow-[0_6px_18px_rgba(124,92,255,0.25)] disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+        >
           Review
-        </PillButton>
+          <Arrow size={18} />
+        </button>
       </div>
     </div>
   )
@@ -1134,43 +1265,173 @@ function ScanScreen({ onResult, flash }: { onResult: (text: string) => void; fla
       scan.current?.stop()
     }
   }, [supported, onResult, flash])
+
+  const brackets: [string, string][] = [
+    ["top-6 left-6", "border-t-[3px] border-l-[3px] rounded-tl-xl"],
+    ["top-6 right-6", "border-t-[3px] border-r-[3px] rounded-tr-xl"],
+    ["bottom-[4.5rem] left-6", "border-b-[3px] border-l-[3px] rounded-bl-xl"],
+    ["bottom-[4.5rem] right-6", "border-b-[3px] border-r-[3px] rounded-br-xl"],
+  ]
+
   return (
-    <div className="animate-float-up flex min-h-full flex-col pt-2">
-      <div className="mb-5 text-center">
-        <Eyebrow className="justify-center">Scan to pay</Eyebrow>
-        <h2 className="mt-1 font-display text-[22px] font-black text-ink">Point at a payment QR</h2>
+    <div
+      className="animate-float-up flex min-h-full flex-col pb-2 pt-1"
+      style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FBFAFF 45%, #F7F4FF 100%)" }}
+    >
+      <div className="mb-6 text-center">
+        <p className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-[#8B9BB5]">Scan to pay</p>
+        <h2 className="mt-2 font-display text-[24px] font-bold leading-tight text-[#0B1020]">Point it at a payment QR</h2>
       </div>
 
-      <div className="relative mx-auto aspect-square w-full max-w-[300px] overflow-hidden rounded-3xl bg-ink" style={{ background: "radial-gradient(120% 120% at 50% 0%, #1b2336 0%, #0B1020 70%)" }}>
+      <div className="relative aspect-square w-full overflow-hidden rounded-[40px] bg-[#1A2030] shadow-[0_12px_40px_rgba(11,16,32,0.18)]">
         {supported ? (
           // eslint-disable-next-line jsx-a11y/media-has-caption
-          <video ref={videoRef} className="absolute inset-0 h-full w-full object-cover" muted playsInline />
+          <video ref={videoRef} className="absolute inset-0 h-full w-full scale-105 object-cover blur-[3px]" muted playsInline />
         ) : (
-          <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "radial-gradient(circle at 30% 30%, #7c5cff55, transparent 40%), radial-gradient(circle at 70% 70%, #7FE8FF44, transparent 45%)" }} />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(160deg, rgba(30,35,50,0.95) 0%, rgba(15,20,35,0.98) 50%), radial-gradient(circle at 30% 25%, rgba(124,92,255,0.25), transparent 45%), radial-gradient(circle at 70% 75%, rgba(127,232,255,0.15), transparent 50%)",
+            }}
+          />
         )}
-        {/* corner brackets */}
-        {[
-          ["top-6 left-6", "border-t-4 border-l-4 rounded-tl-xl"],
-          ["top-6 right-6", "border-t-4 border-r-4 rounded-tr-xl"],
-          ["bottom-6 left-6", "border-b-4 border-l-4 rounded-bl-xl"],
-          ["bottom-6 right-6", "border-b-4 border-r-4 rounded-br-xl"],
-        ].map(([pos, b], i) => (
-          <span key={i} className={`absolute ${pos} h-12 w-12 ${b} border-cyan`} />
+        <div className="absolute inset-0 bg-black/30" />
+
+        {brackets.map(([pos, b], i) => (
+          <span key={i} className={`pointer-events-none absolute ${pos} z-10 h-10 w-10 ${b} border-white/85`} />
         ))}
-        <span className="absolute left-8 right-8 h-0.5 bg-cyan shadow-glow animate-scanline" style={{ top: "20%" }} />
-        <div className="absolute inset-x-0 bottom-5 text-center text-[13px] font-semibold text-white/70">{supported ? "Point at a QR" : "Camera unavailable — paste a link"}</div>
+        <span className="pointer-events-none absolute left-7 right-7 z-10 h-[2px] rounded-full bg-[#7FE8FF] shadow-[0_0_14px_rgba(127,232,255,0.85)] animate-scanline" />
+
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={SCAN_KUMO} alt="" className="h-[32%] w-auto max-w-[38%] object-contain drop-shadow-[0_6px_18px_rgba(0,0,0,0.3)]" draggable={false} />
+        </div>
+
+        <p className="absolute inset-x-0 bottom-6 z-20 text-center font-display text-[13px] font-medium text-white/85">
+          {supported ? "Align the QR code within the frame" : "Camera unavailable — paste a link below"}
+        </p>
       </div>
 
-      <div className="my-5 flex items-center gap-3 text-muted">
-        <span className="flex-1 border-t border-dashed border-lilac-soft" />
-        <span className="font-display text-[12px] font-bold">or paste a link</span>
-        <span className="flex-1 border-t border-dashed border-lilac-soft" />
+      <div className="my-6 flex items-center gap-4">
+        <span className="h-px flex-1 bg-[#DDE3ED]" />
+        <span className="font-display text-[13px] font-medium text-[#8B9BB5]">or paste a link</span>
+        <span className="h-px flex-1 bg-[#DDE3ED]" />
       </div>
 
-      <Field value={paste} onChange={setPaste} mono placeholder="https://…?r=kumo-good:pay:v1:…" prefix={<LinkIcon size={16} />} />
-      <PillButton variant="secondary" size="block" className="mt-3" disabled={!paste.trim()} onClick={() => onResult(paste.trim())}>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#4A90E2]">
+          <LinkIcon size={18} />
+        </span>
+        <input
+          value={paste}
+          onChange={(e) => setPaste(e.target.value)}
+          placeholder="https://pay.kumogood.com/checkout/abc123"
+          className="w-full rounded-2xl border border-[#E2E8F0] bg-white py-3.5 pl-11 pr-4 font-display text-[14px] text-[#0B1020] placeholder:text-[#B8C0D0] focus:border-[#4A90E2]/50 focus:outline-none focus:ring-2 focus:ring-[#4A90E2]/15"
+          aria-label="Payment link"
+        />
+      </div>
+
+      <button
+        type="button"
+        disabled={!paste.trim()}
+        onClick={() => onResult(paste.trim())}
+        className="press mt-3 flex h-[52px] w-full items-center justify-center rounded-2xl bg-[#E8F4FF] font-display text-[16px] font-bold text-[#0B1020] transition-colors disabled:cursor-not-allowed disabled:bg-[#F1F5F9] disabled:text-[#B8C0D0]"
+      >
         Use link
-      </PillButton>
+      </button>
+    </div>
+  )
+}
+
+function RequestField({
+  icon,
+  label,
+  value,
+  onChange,
+  placeholder,
+  suffix,
+  inputMode,
+  amount,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  suffix?: React.ReactNode
+  inputMode?: "text" | "decimal"
+  amount?: boolean
+}) {
+  return (
+    <div className="w-full">
+      <div className="mb-2.5 flex items-center gap-2.5">
+        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-[#E8DEFF] text-[#8B5CF6]">{icon}</div>
+        <span className="font-display text-[11px] font-bold uppercase tracking-[0.12em] text-[#8E84AD]">{label}</span>
+      </div>
+      <div className="flex items-center rounded-[22px] bg-white px-5 py-[18px] shadow-[0_4px_24px_rgba(11,16,32,0.07)]">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          inputMode={inputMode}
+          className={`min-w-0 flex-1 border-0 bg-transparent text-left font-display text-[#0B1020] placeholder:text-[#B8C0D0] focus:outline-none ${
+            amount ? "text-[26px] font-bold tracking-tight placeholder:font-bold" : "text-[18px] font-semibold placeholder:font-medium"
+          }`}
+        />
+        {suffix}
+      </div>
+    </div>
+  )
+}
+
+const QR_LOADING_CELLS = (() => {
+  const filled = new Set<number>()
+  const mark = (r: number, c: number, size = 11) => {
+    for (let dr = 0; dr < 3; dr++) for (let dc = 0; dc < 3; dc++) filled.add((r + dr) * size + (c + dc))
+  }
+  mark(0, 0)
+  mark(0, 8)
+  mark(8, 0)
+  ;[10, 11, 12, 20, 21, 32, 33, 34, 43, 54, 55, 65, 66, 76, 77, 87, 88, 98, 99, 45, 56, 67, 78].forEach((i) => filled.add(i))
+  return filled
+})()
+
+function RequestQrLoading() {
+  return (
+    <div className="relative rounded-[28px] bg-white px-6 py-8 shadow-[0_8px_32px_rgba(124,92,255,0.12)] animate-pop" aria-busy="true" aria-label="Creating QR code">
+      <div className="flex flex-col items-center">
+        <div className="relative rounded-[20px] bg-white p-4 shadow-[0_4px_24px_rgba(11,16,32,0.08)]">
+          <div className="relative h-[168px] w-[168px] overflow-hidden rounded-xl bg-[#FAFAFF]">
+            <div className="grid h-full w-full grid-cols-11 grid-rows-11 gap-[2px] p-1">
+              {Array.from({ length: 121 }, (_, i) => {
+                const on = QR_LOADING_CELLS.has(i)
+                const wave = (i % 11) + Math.floor(i / 11)
+                return (
+                  <span
+                    key={i}
+                    className={`rounded-[1px] ${on ? "animate-qr-pulse bg-[#0A0E27]" : "bg-[#E8E4F8] opacity-35"}`}
+                    style={{ animationDelay: `${wave * 0.06}s` }}
+                  />
+                )
+              })}
+            </div>
+            <span className="pointer-events-none absolute inset-x-2 top-[18%] z-10 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#7FE8FF] to-transparent opacity-90 shadow-[0_0_16px_rgba(127,232,255,0.9)] animate-scanline" />
+            <span className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-b from-[#7FE8FF]/10 via-transparent to-[#C7B5FF]/10 animate-qr-glow" />
+          </div>
+          <div className="pointer-events-none absolute -bottom-3 left-1/2 z-20 -translate-x-1/2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={SCAN_KUMO} alt="" className="h-11 w-11 animate-breathe object-contain drop-shadow-md" draggable={false} />
+          </div>
+        </div>
+
+        <p className="mt-7 font-display text-[16px] font-bold text-[#6B66E5]">Creating your QR…</p>
+        <p className="mt-1 font-display text-[13px] font-medium text-[#9AA5B8]">Encoding your payment link</p>
+
+        <div className="relative mt-5 h-1.5 w-52 overflow-hidden rounded-full bg-[#EDE9FE]">
+          <span className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-gradient-to-r from-[#40E0D0] to-[#4776E6] animate-qr-bar" />
+        </div>
+      </div>
     </div>
   )
 }
@@ -1181,56 +1442,127 @@ function RequestScreen({ address, flash }: { address: Hex; flash: (m: string) =>
   const [label, setLabel] = useState("")
   const [qr, setQr] = useState<string | null>(null)
   const [link, setLink] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const make = async () => {
     const amt = Number(amount)
     if (!Number.isFinite(amt) || amt <= 0) return flash("Enter an amount")
-    const uri = buildPaymentRequest({ to: address, amount: amt, ...(memo ? { memo } : {}), ...(label ? { label } : {}), token: G_TOKEN_ADDR, chainId: CHAIN_ID })
-    const url = `${window.location.origin}/app?r=${encodeURIComponent(uri)}`
-    setLink(url)
-    setQr(await toQrDataUrl(url))
+    setCreating(true)
+    setQr(null)
+    setLink(null)
+    try {
+      const uri = buildPaymentRequest({ to: address, amount: amt, ...(memo ? { memo } : {}), ...(label ? { label } : {}), token: G_TOKEN_ADDR, chainId: CHAIN_ID })
+      const url = `${window.location.origin}/app?r=${encodeURIComponent(uri)}`
+      setLink(url)
+      const [dataUrl] = await Promise.all([toQrDataUrl(url), new Promise<void>((r) => setTimeout(r, 850))])
+      setQr(dataUrl)
+    } catch (e) {
+      flash((e as Error).message)
+    } finally {
+      setCreating(false)
+    }
   }
   return (
-    <div className="animate-float-up pt-2">
-      <div className="mb-5 text-center">
-        <Eyebrow className="justify-center">Request money</Eyebrow>
-        <h2 className="mt-1 font-display text-[22px] font-black text-ink">Make a “pay me” QR</h2>
+    <div
+      className="animate-float-up relative min-h-full pb-2 pt-1"
+      style={{ background: "linear-gradient(180deg, #F3EFFF 0%, #FAF8FF 30%, #F7F4FF 65%, #EDE9FE 100%)" }}
+    >
+      <Sparkle size={14} className="pointer-events-none absolute left-8 top-14 text-white opacity-90" />
+      <Sparkle size={10} className="pointer-events-none absolute right-12 top-24 text-[#E0D4FF] opacity-80" />
+      <Sparkle size={12} className="pointer-events-none absolute left-14 top-[38%] text-white opacity-70" />
+      <Sparkle size={11} className="pointer-events-none absolute right-8 top-[52%] text-[#DDD6FE] opacity-75" />
+      <Sparkle size={13} className="pointer-events-none absolute left-10 bottom-40 text-white opacity-65" />
+
+      <div className="relative mb-8 text-center">
+        <p className="font-display text-[11px] font-bold uppercase tracking-[0.16em] text-[#8E84AD]">Request money</p>
+        <h2 className="mt-3 font-display text-[30px] font-bold leading-[1.15] tracking-tight text-[#0A0E27]">Make a “pay me” QR</h2>
       </div>
 
-      {qr && link ? (
-        <Card className="flex flex-col items-center !py-6">
-          <div className="rounded-2xl bg-white p-3 shadow-card ring-1 ring-slate-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qr} alt="payment request QR" className="h-44 w-44 rounded-xl" />
-          </div>
-          <div className="mt-3 text-center">
-            <GAmount value={amount || "0"} size="text-[26px]" />
-            <div className="mt-0.5 text-[13px] font-semibold text-slate2">
-              to {label || "you"}
-              {memo ? ` · ${memo}` : ""}
+      {creating ? (
+        <RequestQrLoading />
+      ) : qr && link ? (
+        <div className="relative rounded-[28px] bg-white px-6 py-8 shadow-[0_8px_32px_rgba(124,92,255,0.12)] animate-pop">
+          <div className="flex flex-col items-center">
+            <div className="rounded-[20px] bg-white p-4 shadow-[0_4px_24px_rgba(11,16,32,0.08)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qr} alt="payment request QR" className="h-[200px] w-[200px] rounded-xl" />
             </div>
+            <div className="mt-5 text-center">
+              <GAmount value={amount || "0"} size="text-[32px]" />
+              <div className="mt-1 font-display text-[15px] font-semibold text-[#6B66E5]">
+                to {label || "you"}
+                {memo ? ` · ${memo}` : ""}
+              </div>
+            </div>
+            <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#EDE9FE] px-3.5 py-1.5 font-display text-[12.5px] font-bold text-[#6B66E5]">
+              <WifiOff size={14} />
+              Works offline
+            </span>
+            <button
+              type="button"
+              onClick={() => { navigator.clipboard?.writeText(link); flash("Link copied") }}
+              className="press mt-5 flex h-[52px] w-full items-center justify-center gap-2 rounded-full border border-[#C7B5FF] bg-white font-display text-[15px] font-bold text-[#0A0E27]"
+            >
+              <Copy size={18} className="text-[#6B66E5]" />
+              Copy link
+            </button>
+            <button
+              type="button"
+              className="press mt-4 font-display text-[14px] font-bold text-[#6B66E5]"
+              onClick={() => {
+                setQr(null)
+                setLink(null)
+                setAmount("")
+                setMemo("")
+                setLabel("")
+              }}
+            >
+              New request
+            </button>
           </div>
-          <Chip tone="lilac" className="mt-3" icon={<WifiOff size={13} />}>
-            Works offline
-          </Chip>
-          <PillButton variant="secondary" size="block" className="mt-4" icon={<Copy size={18} />} onClick={() => { navigator.clipboard?.writeText(link); flash("Link copied") }}>
-            Copy link
-          </PillButton>
-          <button className="press mt-2 font-display text-[13px] font-bold text-violet2-deep" onClick={() => { setQr(null); setLink(null) }}>
-            New request
-          </button>
-        </Card>
+        </div>
       ) : (
-        <>
-          <div className="space-y-3">
-            <Field label="Amount" value={amount} onChange={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} inputMode="decimal" suffix="G$" placeholder="30" />
-            <Field label="Your name / stall (optional)" value={label} onChange={setLabel} placeholder="Tea Stall" />
-            <Field label="Memo (optional)" value={memo} onChange={setMemo} placeholder="chai" />
-          </div>
-          <PillButton size="block" className="mt-5" icon={<QrCode size={18} />} onClick={make}>
-            Create QR
-          </PillButton>
-        </>
+        <div className="relative flex w-full flex-col space-y-5">
+          <RequestField
+            icon={<Wallet size={16} />}
+            label="Amount"
+            amount
+            value={amount}
+            onChange={(v) => setAmount(v.replace(/[^0-9.]/g, ""))}
+            placeholder="30"
+            inputMode="decimal"
+            suffix={
+              <>
+                <span className="mx-4 h-7 w-px shrink-0 bg-[#E2E8F0]" />
+                <span className="shrink-0 font-display text-[18px] font-semibold text-[#9AA5B8]">G$</span>
+              </>
+            }
+          />
+          <RequestField icon={<Home size={16} />} label="Your name / stall (optional)" value={label} onChange={setLabel} placeholder="Tea Stall" />
+          <RequestField icon={<Message size={16} />} label="Memo (optional)" value={memo} onChange={setMemo} placeholder="chai" />
+          <button
+            type="button"
+            disabled={creating}
+            onClick={make}
+            className="press mt-3 flex h-[56px] w-full items-center justify-center rounded-full font-display text-[17px] font-bold text-white shadow-[0_10px_28px_rgba(74,144,226,0.35)] disabled:opacity-70"
+            style={{ background: "linear-gradient(90deg, #40E0D0 0%, #00BFFF 100%)" }}
+          >
+            <span className="flex items-center">
+              <QrCode size={22} />
+              <span className="mx-5 h-6 w-px bg-white/55" />
+              Create QR
+            </span>
+          </button>
+        </div>
       )}
+    </div>
+  )
+}
+
+function ReviewRow({ label, children, accent }: { label: string; children: React.ReactNode; accent?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-[#F0F2F8] py-3.5 last:border-0">
+      <span className="shrink-0 font-display text-[14px] font-semibold text-[#8B9BB5]">{label}</span>
+      <div className={`min-w-0 text-right font-display text-[14px] font-bold ${accent ? "text-[#4A90E2]" : "text-[#0A0E27]"}`}>{children}</div>
     </div>
   )
 }
@@ -1244,73 +1576,74 @@ function SignScreen(props: {
   onSign: () => void
   selfAddr: Hex
 }) {
-  const { intent, recipientInput, setRecipientInput, online, busy, onSign, selfAddr } = props
+  const { intent, recipientInput, setRecipientInput, busy, onSign, selfAddr } = props
   const isStream = !!intent.period
+  const amtNum = Number(intent.amount)
+  const amtDisplay = Number.isFinite(amtNum) ? amtNum.toFixed(2) : intent.amount
+  const resolvedAddr = isAddress(recipientInput) ? recipientInput : isAddress(intent.recipient) ? intent.recipient : ""
+  const toName = isAddress(intent.recipient) ? shortAddr(intent.recipient) : intent.recipient
+
   return (
-    <div className="animate-float-up flex min-h-full flex-col pt-2">
-      <div className="text-center">
-        <Eyebrow className="justify-center">Confirm payment</Eyebrow>
-        <div className="mt-4 grid place-items-center">
-          <GAmount value={intent.amount} size="text-[52px]" />
-          <div className="mt-1 text-[14px] font-semibold text-slate2">to {isAddress(recipientInput) ? shortAddr(recipientInput) : intent.recipient}</div>
-          {isStream && <div className="mt-1 text-[13px] font-bold text-violet2-deep">streaming · per {intent.period}</div>}
+    <div className="animate-float-up flex min-h-full flex-col pb-2 pt-1" style={{ background: "#F8F9FD" }}>
+      <div className="rounded-[24px] bg-white px-5 py-6 shadow-[0_4px_24px_rgba(11,16,32,0.06)]">
+        <div className="border-b border-[#F0F2F8] pb-5 text-center">
+          <div className="font-display text-[32px] font-bold tracking-tight text-[#0A0E27]">G$ {amtDisplay}</div>
+          <div className="mt-1 font-display text-[14px] font-medium text-[#9AA5B8]">≈ ${amtDisplay} USD</div>
+          {isStream && <div className="mt-1 font-display text-[13px] font-bold text-[#6B66E5]">streaming · per {intent.period}</div>}
+        </div>
+
+        <div className="pt-1">
+          <ReviewRow label="To">
+            <div>
+              <div>{toName}</div>
+              {resolvedAddr && <div className="mt-0.5 font-mono text-[12px] font-medium text-[#9AA5B8]">{shortAddr(resolvedAddr)}</div>}
+            </div>
+          </ReviewRow>
+          <ReviewRow label="Network">GoodDollar ({IS_MAINNET ? "Celo" : "Alfajores"})</ReviewRow>
+          <ReviewRow label="Fee" accent>
+            Sponsored
+          </ReviewRow>
+          <ReviewRow label="Memo">{intent.memo || "—"}</ReviewRow>
         </div>
       </div>
 
-      <Card className="mt-7 !py-1">
-        <KvRow label="To">
-          <span className="font-mono text-[13px]">{isAddress(recipientInput) ? shortAddr(recipientInput) : "—"}</span>
-        </KvRow>
-        <KvRow label="For">{intent.memo || "—"}</KvRow>
-        <KvRow label="Expires in">
-          <span className="inline-flex items-center gap-1.5">
-            <Clock size={15} className="text-violet2" />
-            14 days
-          </span>
-        </KvRow>
-        <KvRow label="Gas" last>
-          <Chip tone="lilac">Paid by relayer · cUSD</Chip>
-        </KvRow>
-      </Card>
-
       {!isAddress(recipientInput) && (
-        <Card className="mt-3 space-y-2">
-          <Eyebrow>Recipient address</Eyebrow>
+        <div className="mt-4 space-y-2 rounded-[20px] bg-white px-4 py-4 shadow-[0_4px_20px_rgba(11,16,32,0.05)]">
+          <span className="font-display text-[11px] font-bold uppercase tracking-[0.1em] text-[#8E84AD]">Recipient address</span>
           <input
-            className="field font-mono text-sm"
+            className="w-full rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3 font-mono text-sm text-[#0A0E27] placeholder:text-[#B8C0D0] focus:border-[#4A90E2]/50 focus:outline-none focus:ring-2 focus:ring-[#4A90E2]/15"
             placeholder="0x…"
             value={recipientInput}
             onChange={(e) => setRecipientInput(e.target.value)}
           />
-          <button className="press font-display text-[12px] font-bold text-violet2-deep" onClick={() => setRecipientInput(selfAddr)}>
+          <button type="button" className="press font-display text-[12px] font-bold text-[#6B66E5]" onClick={() => setRecipientInput(selfAddr)}>
             use my own address (for testing)
           </button>
-        </Card>
+        </div>
       )}
 
-      <div className="mt-5 flex items-center justify-center">
-        {online ? (
-          <Chip tone="cyan" icon={<Wifi size={14} />}>
-            Online · settles instantly
-          </Chip>
-        ) : (
-          <Chip tone="lilac" icon={<WifiOff size={14} />}>
-            Offline · will queue &amp; settle later
-          </Chip>
-        )}
+      <div className="mt-4 flex items-center gap-3 overflow-hidden rounded-[20px] bg-[#E3F2FD] px-4 py-3">
+        <p className="flex-1 font-display text-[14px] font-semibold leading-snug text-[#4A90E2]">You can sign this offline.</p>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={ONBOARDING_MASCOT} alt="" className="h-14 w-14 shrink-0 object-contain" draggable={false} />
       </div>
 
-      <div className="mt-auto pt-7">
+      <div className="mt-auto pt-6">
         {isStream ? (
-          <PillButton variant="ghost" size="block" disabled>
+          <button type="button" disabled className="flex h-[52px] w-full items-center justify-center rounded-full bg-slate-200 font-display text-[16px] font-bold text-slate-400">
             Streaming coming soon
-          </PillButton>
+          </button>
         ) : (
-          <PillButton size="block" variant={online ? "primary" : "violet"} disabled={busy} icon={online ? <Shield size={18} /> : <Lock size={18} />} onClick={onSign}>
-            {busy ? "Signing…" : online ? "Sign & pay" : "Sign offline"}
-          </PillButton>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onSign}
+            className="press flex h-[52px] w-full items-center justify-center rounded-full font-display text-[16px] font-bold text-white shadow-[0_8px_24px_rgba(126,84,233,0.35)] disabled:opacity-70"
+            style={{ background: "linear-gradient(90deg, #8E54E9 0%, #4776E6 100%)" }}
+          >
+            {busy ? "Signing…" : "Sign payment"}
+          </button>
         )}
-        <SignFootnote />
       </div>
     </div>
   )
@@ -1558,7 +1891,9 @@ function ActivityScreen({ queue, online, onFlush, onRemove }: { queue: QueuedIte
 function IdentityScreen({ identity, ubi, address, streak, onClaim, busy, flash }: { identity: IdentityStatus | null; ubi: bigint | null; address: Hex; streak: Streak; onClaim: () => void; busy: boolean; flash: (m: string) => void }) {
   const canClaim = ubi != null && ubi > 0n
   const verified = !!identity?.isWhitelisted
+  const streakBest = Math.max(streak.best, streak.count)
   const [verifying, setVerifying] = useState(false)
+  const days = ["M", "T", "W", "T", "F", "S", "S"]
   const verify = async () => {
     setVerifying(true)
     const res = await startFaceVerification(`${window.location.origin}/app?verified=1`)
@@ -1567,67 +1902,140 @@ function IdentityScreen({ identity, ubi, address, streak, onClaim, busy, flash }
     window.location.href = res.url
   }
   return (
-    <div className="animate-float-up space-y-4 pt-4">
-      <h2 className="px-1 font-display text-[22px] font-black text-ink">Identity &amp; UBI</h2>
+    <div
+      className="animate-float-up relative min-h-full space-y-4 pb-2 pt-2"
+      style={{ background: "linear-gradient(180deg, #F8FBFF 0%, #FAF8FF 45%, #F5F2FF 100%)" }}
+    >
+      <Sparkle size={12} className="pointer-events-none absolute right-8 top-6 text-[#E0D4FF] opacity-70" />
+      <Sparkle size={10} className="pointer-events-none absolute left-6 top-24 text-white opacity-80" />
+      <Sparkle size={11} className="pointer-events-none absolute right-12 top-[42%] text-[#DDD6FE] opacity-60" />
 
-      {/* verification */}
-      <Card className={verified ? "ring-1 ring-emerald-100" : ""}>
-        <div className="flex items-center gap-3.5">
-          <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${verified ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}>
-            {verified ? <CheckCircle size={26} /> : <Face size={26} />}
+      <div className="relative px-0.5">
+        <h2 className="font-display text-[28px] font-bold tracking-tight text-[#0A0E27]">Identity &amp; UBI</h2>
+        <p className="mt-1 font-display text-[14px] font-medium text-[#9AA5B8]">Your identity. Your rewards.</p>
+      </div>
+
+      <button
+        type="button"
+        onClick={verified ? undefined : verify}
+        disabled={verifying}
+        className="press relative w-full rounded-[22px] bg-white px-4 py-4 text-left shadow-[0_4px_24px_rgba(11,16,32,0.06)] disabled:opacity-80"
+      >
+        {verified && (
+          <span className="mb-3 inline-flex rounded-full bg-[#D1FAE5] px-2.5 py-0.5 font-display text-[10px] font-bold uppercase tracking-[0.08em] text-[#059669]">
+            Verified
           </span>
-          <div className="flex-1">
-            <div className="font-display text-[16px] font-extrabold text-ink">{verified ? "Verified human" : "Not verified"}</div>
-            <div className="text-[13px] text-slate2">{verified ? `GoodDollar Identity · ${shortAddr(address)}` : "Verify to unlock your UBI claim."}</div>
+        )}
+        <div className="flex items-center gap-3.5">
+          <span
+            className={`grid h-14 w-14 shrink-0 place-items-center rounded-full ${
+              verified ? "bg-gradient-to-br from-[#A7F3D0] to-[#6EE7B7] text-emerald-700" : "bg-gradient-to-br from-amber-100 to-amber-200 text-amber-600"
+            }`}
+          >
+            {verified ? <Shield size={28} /> : <Face size={28} />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 font-display text-[16px] font-bold text-[#0A0E27]">
+              {verified ? "Verified human" : verifying ? "Opening verification…" : "Not verified"}
+              {verified && <CheckCircle size={16} className="text-emerald-500" />}
+            </div>
+            <div className="mt-0.5 text-[13px] font-medium text-[#9AA5B8]">
+              {verified ? `GoodDollar Identity · ${shortAddr(address)}` : "Verify to unlock your UBI claim."}
+            </div>
           </div>
-          {!verified && (
-            <PillButton size="sm" onClick={verify} disabled={verifying} icon={<Face size={16} />}>
-              {verifying ? "…" : "Verify"}
-            </PillButton>
-          )}
+          <ChevR size={18} className="shrink-0 text-[#C4CBD8]" />
         </div>
-      </Card>
+      </button>
 
-      {/* streak */}
-      <Card>
+      <div className="rounded-[22px] bg-white px-4 py-4 shadow-[0_4px_24px_rgba(11,16,32,0.06)]">
         <div className="flex items-center justify-between">
-          <Eyebrow>Claim streak</Eyebrow>
-          <Chip tone="amber" icon={<Flame size={14} />}>
-            best {streak.best}
-          </Chip>
+          <span className="font-display text-[11px] font-bold uppercase tracking-[0.12em] text-[#8E84AD]">Claim streak</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#EDE9FE] px-2.5 py-1 font-display text-[11px] font-bold text-[#6B66E5]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={STREAK_FLAME} alt="" className="h-4 w-4 object-contain" draggable={false} />
+            best {streakBest}
+          </span>
         </div>
-        <div className="mt-3 flex items-center justify-between">
-          {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-            <span
-              key={i}
-              className={`grid h-8 w-8 place-items-center rounded-full font-display text-[13px] font-extrabold ${
-                i < streak.count ? "bg-violet2 text-white" : i === streak.count ? "bg-cyan/40 text-ink ring-2 ring-cyan" : "bg-slate-100 text-muted"
-              }`}
-            >
-              {i < streak.count ? <Flame size={15} /> : d}
-            </span>
-          ))}
+        <div className="mt-3.5 flex items-center justify-between gap-1">
+          {days.map((d, i) => {
+            const completed = i < streak.count
+            const current = i === streak.count
+            return (
+              <span
+                key={i}
+                className={`grid h-9 w-9 place-items-center rounded-full font-display text-[12px] font-bold ${
+                  completed
+                    ? "bg-[#7C5CFF] text-white shadow-[0_4px_12px_rgba(124,92,255,0.28)]"
+                    : current
+                      ? "bg-[#E8F4FF] text-[#4A90E2] ring-2 ring-[#7FE8FF]"
+                      : "bg-[#F1F5F9] text-[#B8C0D0]"
+                }`}
+              >
+                {completed ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={STREAK_FLAME} alt="" className="h-4 w-4 object-contain brightness-[1.8] saturate-50" draggable={false} />
+                ) : current ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={NAV_KUMO_MARK} alt="" className="h-5 w-5 object-contain" draggable={false} />
+                ) : (
+                  d
+                )}
+              </span>
+            )
+          })}
         </div>
-        <p className="mt-3 text-[13.5px] font-semibold text-slate2">{streak.count}-day claim streak · keep it going!</p>
-      </Card>
+        <p className="mt-3.5 font-display text-[13px] font-semibold text-[#9AA5B8]">
+          <span className="text-[#6B66E5]">{streak.count}-day claim streak</span> · keep it going!
+        </p>
+      </div>
 
-      {/* UBI entitlement */}
-      <Card className="relative overflow-hidden">
-        <div className="absolute -bottom-8 -right-6 opacity-15">
-          <CloudMark size={110} color="#7FE8FF" />
+      <div className="relative overflow-hidden rounded-[22px] bg-white px-4 py-4 shadow-[0_4px_24px_rgba(11,16,32,0.06)]">
+        <div className="pointer-events-none absolute -bottom-6 -right-4 opacity-50">
+          <CloudMark size={90} color="#B7F1FF" />
         </div>
         <div className="relative">
-          <Eyebrow>Daily UBI entitlement</Eyebrow>
-          <div className="mt-2 flex items-end justify-between">
-            <GAmount value={ubi == null ? "—" : fmtG(ubi)} size="text-[34px]" />
-            <Chip tone="lilac">Gasless · relayer</Chip>
+          <div className="flex items-start justify-between gap-2">
+            <span className="font-display text-[11px] font-bold uppercase tracking-[0.12em] text-[#7CB8E8]">Daily UBI entitlement</span>
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#E8F4FF] px-2.5 py-1 font-display text-[11px] font-bold text-[#4A90E2]">
+              <Bolt size={12} />
+              Gasless · relayer
+            </span>
           </div>
-          <PillButton size="block" className="mt-4" variant="violet" disabled={busy || !canClaim} icon={<Coin size={18} />} onClick={onClaim}>
-            {canClaim ? "Claim today’s UBI" : "Already claimed today"}
-          </PillButton>
-          <p className="mt-2 text-center text-[12px] text-muted">Gasless via the relayer. Verification is required to receive UBI.</p>
+          <div className="mt-2">
+            <GAmount value={ubi == null ? "0" : fmtG(ubi)} size="text-[36px]" />
+          </div>
+          <button
+            type="button"
+            disabled={busy || !canClaim}
+            onClick={onClaim}
+            className="press mt-4 flex h-[52px] w-full items-center justify-center gap-2 rounded-full font-display text-[15px] font-bold text-[#0A0E27] shadow-[0_4px_16px_rgba(127,232,255,0.25)] disabled:shadow-none"
+            style={{
+              background: canClaim ? "linear-gradient(90deg, #7FE8FF 0%, #B7F1FF 100%)" : "linear-gradient(90deg, #E8F4FF 0%, #EDF6FF 100%)",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={NAV_KUMO_MARK} alt="" className="h-6 w-6 object-contain" draggable={false} />
+            {busy ? "Claiming…" : canClaim ? "Claim today's UBI" : "Already claimed today"}
+          </button>
+          <p className="mt-3 text-center font-display text-[12px] font-medium text-[#9AA5B8]">Gasless via the relayer. Verification is required to receive UBI.</p>
         </div>
-      </Card>
+      </div>
+    </div>
+  )
+}
+
+function ProfileLabel({ children, color = "#7CB8E8" }: { children: React.ReactNode; color?: string }) {
+  return (
+    <span className="font-display text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color }}>
+      {children}
+    </span>
+  )
+}
+
+function ProfileCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-[22px] bg-white px-4 py-4 shadow-[0_4px_24px_rgba(11,16,32,0.06)] ${className}`}>
+      {children}
     </div>
   )
 }
@@ -1674,24 +2082,21 @@ function OfflineVoiceCard({ flash }: { flash: (m: string) => void }) {
   const mb = (n: number) => `${Math.round(n / 1e6)} MB`
 
   return (
-    <Card>
-      <div className="flex items-center justify-between">
-        <Eyebrow>Offline voice</Eyebrow>
-        {downloaded ? (
-          <Chip tone="green" icon={<Check size={13} />}>
-            Ready
-          </Chip>
-        ) : (
-          <Chip tone="lilac">Optional</Chip>
-        )}
-      </div>
-      <div className="mt-2 flex items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-lilac/30 text-violet2-deep">
-          <Mic size={20} />
+    <ProfileCard className="relative">
+      <span className="absolute right-4 top-4 rounded-full bg-[#EDE9FE] px-2.5 py-0.5 font-display text-[10px] font-bold text-[#6B66E5]">
+        {downloaded ? "Ready" : "Optional"}
+      </span>
+
+      <div className="flex items-start gap-3.5 pr-16">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#EDE9FE] text-[#6B66E5]">
+          <Mic size={22} />
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="font-display text-[15px] font-extrabold text-ink">{VOICE_MODEL_LABEL}</div>
-          <div className="text-[12px] text-muted">{VOICE_MODEL_SIZE_LABEL} · one-time download · stays on your device</div>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <ProfileLabel color="#8E84AD">Offline voice</ProfileLabel>
+          <div className="mt-1 font-display text-[15px] font-bold text-[#0A0E27]">{VOICE_MODEL_LABEL}</div>
+          <div className="mt-0.5 font-display text-[12px] font-medium text-[#9AA5B8]">
+            {VOICE_MODEL_SIZE_LABEL}, one-time download, stays on your device
+          </div>
         </div>
       </div>
 
@@ -1715,20 +2120,32 @@ function OfflineVoiceCard({ flash }: { flash: (m: string) => void }) {
           </span>
         </button>
       ) : (
-        <PillButton variant="violet" size="block" className="mt-4" icon={<Download size={18} />} onClick={onDownload}>
+        <button
+          type="button"
+          onClick={onDownload}
+          className="press relative mt-4 flex h-[52px] w-full items-center justify-center gap-2 overflow-hidden rounded-full font-display text-[15px] font-bold text-white shadow-[0_8px_24px_rgba(124,92,255,0.35)]"
+          style={{ background: "linear-gradient(90deg, #8E54E9 0%, #6B66E5 45%, #4776E6 100%)" }}
+        >
+          <Download size={18} />
           Download {VOICE_MODEL_SIZE_LABEL}
-        </PillButton>
+          <Sparkle size={10} className="pointer-events-none absolute left-[18%] top-3 text-white/70" />
+          <Sparkle size={8} className="pointer-events-none absolute right-[22%] bottom-3 text-white/60" />
+        </button>
       )}
 
-      {error && <p className="mt-2 text-[12px] text-red-600">{error}</p>}
-      <p className="mt-2 text-[12px] text-muted">Lets you dictate payments with no signal. Without it, voice uses the network and typing always works.</p>
-    </Card>
+      {error && <p className="mt-2 font-display text-[12px] font-semibold text-red-600">{error}</p>}
+      <p className="mt-3 flex items-start gap-1.5 font-display text-[12px] font-medium leading-relaxed text-[#9AA5B8]">
+        <Sparkle size={12} className="mt-0.5 shrink-0 text-[#C7B5FF]" />
+        Lets you dictate payments with no signal. Without it, voice uses the network and typed input still works.
+      </p>
+    </ProfileCard>
   )
 }
 
 function WalletScreen({ address, relayer, onReset, onImport, flash }: { address: Hex; relayer: RelayerInfo | null; onReset: () => void; onImport: (pk: string) => void; flash: (m: string) => void }) {
   const [pk, setPk] = useState<string | null>(null)
   const [importPk, setImportPk] = useState("")
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [copied, setCopied] = useState(false)
   const toggleReveal = async () => {
     if (pk) return setPk(null)
@@ -1744,80 +2161,192 @@ function WalletScreen({ address, relayer, onReset, onImport, flash }: { address:
     setTimeout(() => setCopied(false), 1500)
   }
   return (
-    <div className="animate-float-up space-y-4 pt-4">
-      <h2 className="px-1 font-display text-[22px] font-black text-ink">Wallet</h2>
+    <div className="animate-float-up relative -mx-5 min-h-full pb-2">
+      <div
+        className="relative overflow-hidden px-5 pb-8 pt-1"
+        style={{ background: "linear-gradient(180deg, #C8E4FF 0%, #DDEFFF 28%, #EEF6FF 55%, #F8FBFF 85%, #FFFFFF 100%)" }}
+      >
+        <Sparkle size={10} className="pointer-events-none absolute left-10 top-16 text-white opacity-80" />
+        <Sparkle size={8} className="pointer-events-none absolute right-16 top-6 text-[#DDD6FE] opacity-70" />
+        <Sparkle size={9} className="pointer-events-none absolute left-1/3 top-28 text-white opacity-60" />
 
-      {/* address */}
-      <Card>
-        <Eyebrow>Your address</Eyebrow>
-        <div className="mt-2.5 flex items-center gap-2.5">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cyan/30 text-ink">
-            <Wallet size={18} />
-          </span>
-          <span className="flex-1 truncate font-mono text-[14px] text-ink">{shortAddr(address)}</span>
-          <button onClick={copyAddr} aria-label="Copy address" className="press grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-ink hover:bg-slate-200">
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-          </button>
-        </div>
-      </Card>
-
-      {/* reveal key */}
-      <Card>
-        <div className="flex items-center justify-between">
-          <div>
-            <Eyebrow>Private key</Eyebrow>
-            <div className="mt-1 text-[13px] text-slate2">Burner wallet · back it up</div>
+        <div className="relative flex items-start justify-between gap-3">
+          <div className="max-w-[58%] pt-3">
+            <h2 className="font-display text-[28px] font-bold tracking-tight text-[#0A0E27]">Wallet</h2>
+            <p className="mt-1 font-display text-[14px] font-medium text-[#9AA5B8]">Your secure, cloud-powered wallet.</p>
           </div>
-          <button onClick={toggleReveal} className="press inline-flex items-center gap-1.5 font-display text-[13px] font-bold text-violet2-deep">
-            {pk ? <Lock size={15} /> : <Eye size={15} />}
-            {pk ? "Hide" : "Reveal"}
-          </button>
+          <div className="relative -mr-1 w-[148px] shrink-0 pt-1">
+            <div
+              className="pointer-events-none absolute bottom-[2%] left-1/2 h-10 w-[80%] -translate-x-1/2 rounded-full blur-2xl"
+              style={{ background: "radial-gradient(ellipse at center, rgba(183,241,255,0.75) 0%, rgba(183,241,255,0) 70%)" }}
+              aria-hidden
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={PROFILE_MASCOT}
+              alt=""
+              width={132}
+              height={132}
+              className="relative z-10 mx-auto h-[118px] w-[118px] object-contain"
+              draggable={false}
+            />
+          </div>
         </div>
-        {pk ? (
-          <button
-            className="mt-2.5 block w-full break-all rounded-xl bg-ink/95 px-3.5 py-3 text-left font-mono text-[12.5px] text-cyan"
-            onClick={() => { navigator.clipboard?.writeText(pk); flash("Private key copied") }}
-          >
-            {pk}
-          </button>
-        ) : (
-          <div className="mt-2.5 rounded-xl bg-ink/95 px-3.5 py-3 font-mono text-[12.5px] text-transparent select-none" style={{ textShadow: "0 0 9px rgba(255,255,255,0.55)" }}>
-            •••• •••• •••• •••• •••• •••• •••• ••••
+      </div>
+
+      <div className="space-y-4 px-5 pt-1">
+        <ProfileCard>
+          <div className="flex items-center gap-3.5">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#E8F4FF] text-[#4A90E2]">
+              <Wallet size={22} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <ProfileLabel>Your address</ProfileLabel>
+              <p className="mt-1 truncate font-display text-[16px] font-bold text-[#0A0E27]">{shortAddr(address)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={copyAddr}
+              aria-label="Copy address"
+              className="press grid h-10 w-10 shrink-0 place-items-center text-[#4A90E2]"
+            >
+              {copied ? <Check size={18} /> : <Copy size={18} />}
+            </button>
+          </div>
+        </ProfileCard>
+
+        <ProfileCard>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-start gap-3.5">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#EDE9FE] text-[#6B66E5]">
+                <Shield size={22} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <ProfileLabel color="#8E84AD">Private key</ProfileLabel>
+                <p className="mt-1 font-display text-[13px] font-medium text-[#9AA5B8]">Burner wallet, back it up</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={toggleReveal}
+              className="press inline-flex shrink-0 items-center gap-1.5 font-display text-[13px] font-bold text-[#6B66E5]"
+            >
+              {pk ? <Lock size={15} /> : <Eye size={15} />}
+              {pk ? "Hide" : "Reveal"}
+            </button>
+          </div>
+          {pk ? (
+            <button
+              type="button"
+              className="relative mt-4 block w-full overflow-hidden rounded-full bg-[#0B1020] px-4 py-3.5 text-left font-mono text-[12px] text-[#7FE8FF]"
+              onClick={() => {
+                navigator.clipboard?.writeText(pk)
+                flash("Private key copied")
+              }}
+            >
+              <span className="block truncate">{pk}</span>
+              <Sparkle size={10} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/80" />
+            </button>
+          ) : (
+            <div className="relative mt-4 overflow-hidden rounded-full bg-[#0B1020] px-4 py-3.5">
+              <p
+                className="truncate font-mono text-[13px] tracking-[0.22em] text-transparent select-none"
+                style={{ textShadow: "0 0 10px rgba(255,255,255,0.65)" }}
+              >
+                ••••••••••••••••••••••••••••••••
+              </p>
+              <Sparkle size={10} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/80" />
+              <Sparkle size={7} className="pointer-events-none absolute right-9 top-[38%] text-white/50" />
+            </div>
+          )}
+
+          <p className="mt-3 flex items-start gap-1.5 font-display text-[12px] font-medium leading-relaxed text-[#9AA5B8]">
+            <Lock size={12} className="mt-0.5 shrink-0 text-[#B8C0D0]" />
+            Stored only in this browser. Export it to keep your funds safe.
+          </p>
+        </ProfileCard>
+
+        <ProfileCard className="!py-2">
+          <div className="flex items-center justify-between gap-4 border-b border-dashed border-[#E2E8F0] py-3">
+            <span className="inline-flex items-center gap-2">
+              <LinkIcon size={14} className="text-[#7CB8E8]" />
+              <ProfileLabel>Chain</ProfileLabel>
+            </span>
+            <span className="inline-flex items-center gap-1.5 font-display text-[14px] font-bold text-[#0A0E27]">
+              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              {IS_MAINNET ? "Celo" : String(relayer?.chainId ?? CHAIN_ID)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-4 border-b border-dashed border-[#E2E8F0] py-3">
+            <span className="inline-flex items-center gap-2">
+              <Users size={14} className="text-[#7CB8E8]" />
+              <ProfileLabel>Relayer</ProfileLabel>
+            </span>
+            <span className="truncate font-display text-[14px] font-bold text-[#0A0E27]">
+              {relayer?.relayerAddress ? shortAddr(relayer.relayerAddress) : relayer?.dryRun ? "dry-run" : "not connected"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-4 py-3">
+            <span className="inline-flex items-center gap-2">
+              <Bolt size={14} className="text-[#7CB8E8]" />
+              <ProfileLabel>Gas paid in</ProfileLabel>
+            </span>
+            <span className="rounded-full bg-[#D1FAE5] px-3 py-1 font-display text-[12px] font-bold text-emerald-700">
+              {relayer?.feeCurrency ?? "cUSD"}
+            </span>
+          </div>
+        </ProfileCard>
+
+        <OfflineVoiceCard flash={flash} />
+
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="press mx-auto flex min-h-[44px] items-center justify-center gap-1 font-display text-[13px] font-semibold text-[#9AA5B8]"
+        >
+          {showAdvanced ? "Hide advanced" : "Advanced options"}
+          <ChevR size={14} className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`} />
+        </button>
+
+        {showAdvanced && (
+          <div className="space-y-3">
+            <ProfileCard className="space-y-3">
+              <ProfileLabel color="#8E84AD">Import a different key</ProfileLabel>
+              <input
+                className="field font-mono text-xs"
+                placeholder="0x… private key"
+                value={importPk}
+                onChange={(e) => setImportPk(e.target.value)}
+              />
+              <PillButton
+                variant="secondary"
+                size="block"
+                disabled={!importPk.trim()}
+                icon={<Download size={18} />}
+                onClick={() => {
+                  onImport(importPk)
+                  setImportPk("")
+                }}
+              >
+                Import
+              </PillButton>
+            </ProfileCard>
+            <PillButton
+              variant="danger"
+              size="block"
+              icon={<Trash size={18} />}
+              onClick={() => {
+                if (confirm("Reset wallet? Export your key first or funds are lost.")) onReset()
+              }}
+            >
+              Reset wallet
+            </PillButton>
+            <p className="px-2 text-center font-display text-[12px] font-medium text-[#9AA5B8]">
+              Resetting erases this in-browser wallet. Make sure you&apos;ve saved your key.
+            </p>
           </div>
         )}
-        <p className="mt-2 text-[12px] text-muted">Stored only in this browser. Export it to keep your funds.</p>
-      </Card>
-
-      {/* network */}
-      <Card className="!py-1">
-        <KvRow label="Chain">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-amber-400" />
-            {IS_MAINNET ? "Celo" : String(relayer?.chainId ?? CHAIN_ID)}
-          </span>
-        </KvRow>
-        <KvRow label="Relayer">{relayer?.relayerAddress ? shortAddr(relayer.relayerAddress) : relayer?.dryRun ? "dry-run" : "not connected"}</KvRow>
-        <KvRow label="Gas paid in" last>
-          <Chip tone="green">{relayer?.feeCurrency ?? "—"}</Chip>
-        </KvRow>
-      </Card>
-
-      {/* offline voice */}
-      <OfflineVoiceCard flash={flash} />
-
-      {/* import */}
-      <Card className="space-y-2">
-        <Eyebrow>Import a different key</Eyebrow>
-        <input className="field font-mono text-xs" placeholder="0x… private key" value={importPk} onChange={(e) => setImportPk(e.target.value)} />
-        <PillButton variant="secondary" size="block" disabled={!importPk.trim()} icon={<Download size={18} />} onClick={() => { onImport(importPk); setImportPk("") }}>
-          Import
-        </PillButton>
-      </Card>
-
-      <PillButton variant="danger" size="block" icon={<Trash size={18} />} onClick={() => { if (confirm("Reset wallet? Export your key first or funds are lost.")) onReset() }}>
-        Reset wallet
-      </PillButton>
-      <p className="px-6 text-center text-[12px] text-muted">Resetting erases this in-browser wallet. Make sure you’ve saved your key.</p>
+      </div>
     </div>
   )
 }
@@ -1825,7 +2354,7 @@ function WalletScreen({ address, relayer, onReset, onImport, flash }: { address:
 // --- small UI ---------------------------------------------------------------
 function Toast({ message }: { message: string }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 mx-auto w-fit max-w-[90%] animate-pop">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-50 mx-auto w-fit max-w-[min(90%,calc(100%-2rem))] animate-pop">
       <div className="flex items-center gap-2.5 rounded-full bg-ink py-2.5 pl-3 pr-4 text-white shadow-cardlg">
         <span className="grid h-6 w-6 place-items-center rounded-full bg-emerald-500">
           <Check size={15} />
@@ -1836,39 +2365,74 @@ function Toast({ message }: { message: string }) {
   )
 }
 
-function TabBar({ screen, setScreen, queueCount }: { screen: Screen; setScreen: (s: Screen) => void; queueCount: number }) {
-  const tabs: { id: Screen; icon: (p: { size?: number; stroke?: number; style?: React.CSSProperties }) => React.ReactNode; label: string; badge?: number }[] = [
+function TabBar({
+  screen,
+  setScreen,
+  queueCount,
+  onPay,
+}: {
+  screen: Screen
+  setScreen: (s: Screen) => void
+  queueCount: number
+  onPay: () => void
+}) {
+  const sideTabs: {
+    id: Screen
+    icon: (p: { size?: number; stroke?: number }) => React.ReactNode
+    label: string
+    badge?: number
+  }[] = [
     { id: "home", icon: Home, label: "Home" },
-    { id: "activity", icon: ActivityIcon, label: "Activity", badge: queueCount },
+    { id: "activity", icon: Wallet, label: "Activity", badge: queueCount },
     { id: "identity", icon: IdentityIcon, label: "Identity" },
-    { id: "wallet", icon: Wallet, label: "Wallet" },
+    { id: "wallet", icon: User, label: "Profile" },
   ]
+
+  const tabBtn = (t: (typeof sideTabs)[number]) => {
+    const active = screen === t.id
+    const Icon = t.icon
+    return (
+      <button
+        key={t.id}
+        onClick={() => setScreen(t.id)}
+        aria-label={t.label}
+        aria-current={active}
+        className="press relative flex min-h-[52px] flex-1 flex-col items-center justify-end gap-1 pb-1.5 pt-6"
+      >
+        <span style={{ color: active ? "#0B1020" : "#94a3b8" }}>
+          <Icon size={22} stroke={active ? 2.2 : 1.8} />
+        </span>
+        <span className="font-display text-[11px] font-semibold" style={{ color: active ? "#0B1020" : "#94a3b8" }}>
+          {t.label}
+        </span>
+        {t.badge ? (
+          <span className="absolute right-2 top-5 grid h-4 min-w-4 place-items-center rounded-full bg-violet2 px-1 text-[10px] font-bold text-white">
+            {t.badge}
+          </span>
+        ) : null}
+      </button>
+    )
+  }
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto flex w-full max-w-[440px] items-stretch justify-around border-t border-slate-100 bg-white/95 px-3 pb-[max(env(safe-area-inset-bottom),8px)] pt-1 backdrop-blur">
-      {tabs.map((t) => {
-        const active = screen === t.id
-        const Icon = t.icon
-        return (
+    <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-full border-t border-slate-100/90 bg-white pb-[max(env(safe-area-inset-bottom),8px)] shadow-[0_-4px_20px_rgba(11,16,32,0.04)] md:max-w-[440px]">
+      <div className="relative flex items-end justify-between px-2">
+        {sideTabs.slice(0, 2).map(tabBtn)}
+        <div className="flex w-[76px] shrink-0 flex-col items-center justify-end pb-1.5">
           <button
-            key={t.id}
-            onClick={() => setScreen(t.id)}
-            aria-label={t.label}
-            aria-current={active}
-            className="press relative flex flex-1 flex-col items-center justify-center gap-1 pt-1.5"
+            type="button"
+            onClick={onPay}
+            aria-label="Pay with Kumo"
+            className="press absolute -top-8 grid h-[62px] w-[62px] place-items-center rounded-full shadow-[0_10px_28px_rgba(127,232,255,0.65)] ring-4 ring-white"
+            style={{ background: "linear-gradient(180deg, #C8F4FF 0%, #7FE8FF 50%, #5DD4F5 100%)" }}
           >
-            {active && <span className="absolute top-0 h-1 w-8 rounded-full bg-violet2" />}
-            <span style={{ color: active ? "#7c5cff" : "#94a3b8" }}>
-              <Icon size={23} stroke={active ? 2.3 : 1.9} />
-            </span>
-            <span className="font-display text-[11px] font-bold" style={{ color: active ? "#7c5cff" : "#94a3b8" }}>
-              {t.label}
-            </span>
-            {t.badge ? (
-              <span className="absolute right-3 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-violet2 px-1 text-[10px] font-bold text-white">{t.badge}</span>
-            ) : null}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={NAV_KUMO_MARK} alt="" width={42} height={42} className="h-[42px] w-[42px] object-contain" draggable={false} />
           </button>
-        )
-      })}
+          <span className="h-[24px]" aria-hidden="true" />
+        </div>
+        {sideTabs.slice(2).map(tabBtn)}
+      </div>
     </nav>
   )
 }
