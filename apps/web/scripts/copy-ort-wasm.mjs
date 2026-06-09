@@ -3,8 +3,10 @@
 // voice model runs in true airplane mode after one online download.
 //
 // Runs on `postinstall` and `prebuild` (so Vercel regenerates them); the files
-// are gitignored. transformers.js v4 uses the JSEP build (CPU-WASM + WebGPU in
-// one binary); we also copy the plain build as a fallback.
+// are gitignored. ORT picks a variant at runtime (jsep / asyncify / jspi /
+// plain) depending on the model + browser, so we copy EVERY ort-wasm-simd-
+// threaded.* file — missing one (e.g. asyncify) breaks with "no available
+// backend found".
 import { readdirSync, existsSync, mkdirSync, copyFileSync, statSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -15,13 +17,9 @@ const repoRoot = join(webRoot, "..", "..")
 const pnpmDir = join(repoRoot, "node_modules", ".pnpm")
 const outDir = join(webRoot, "public", "ort")
 
-// Files ORT fetches at runtime from wasmPaths. jsep = the unified build.
-const WANT = [
-  "ort-wasm-simd-threaded.jsep.wasm",
-  "ort-wasm-simd-threaded.jsep.mjs",
-  "ort-wasm-simd-threaded.wasm",
-  "ort-wasm-simd-threaded.mjs",
-]
+// Match every ORT runtime artifact (all variants: jsep/asyncify/jspi/plain,
+// both .wasm and the .mjs glue ORT dynamically imports).
+const WANT_RE = /^ort-wasm-simd-threaded\..*\.(wasm|mjs)$|^ort-wasm-simd-threaded\.(wasm|mjs)$/
 
 function findOrtDist() {
   if (!existsSync(pnpmDir)) return null
@@ -39,11 +37,10 @@ if (!dist) {
 
 mkdirSync(outDir, { recursive: true })
 let copied = 0
-for (const f of WANT) {
-  const src = join(dist, f)
-  if (!existsSync(src)) continue
-  copyFileSync(src, join(outDir, f))
+for (const f of readdirSync(dist)) {
+  if (!WANT_RE.test(f)) continue
+  copyFileSync(join(dist, f), join(outDir, f))
   copied++
-  console.log(`[copy-ort-wasm] ${f} (${(statSync(src).size / 1e6).toFixed(1)} MB)`)
+  console.log(`[copy-ort-wasm] ${f} (${(statSync(join(dist, f)).size / 1e6).toFixed(1)} MB)`)
 }
 console.log(`[copy-ort-wasm] copied ${copied} file(s) → public/ort`)
